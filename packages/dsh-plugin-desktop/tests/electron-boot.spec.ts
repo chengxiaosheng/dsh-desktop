@@ -10,7 +10,9 @@ import assert from 'node:assert/strict'
 import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { bootDesktop, composeDesktopManifest, dispatchHttpRequest } from '../electron/boot-desktop.ts'
+import { readCloseBehavior } from '../src/index.ts'
 import type { Context } from '@deepseek-ai/cordis'
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
@@ -43,6 +45,27 @@ test('desktop boot helper composes the file:// manifest', async () => {
   }
   const desktop = graph.entries.find((entry) => entry.id === 'dsh-plugin-desktop-connection')
   assert.ok(desktop !== undefined, 'desktop connection bundle in manifest')
+  const shell = graph.entries.find((entry) => entry.id === 'dsh-plugin-desktop')
+  assert.ok(shell !== undefined, 'desktop shell client bundle in manifest')
+
+  // The desktop shell row registers the durable close-window namespace with
+  // its schema default (close = quit, preserving the pre-tray behavior).
+  const settings = ctx.get('settings')
+  assert.ok(settings !== undefined, 'settings provider mounted')
+  assert.deepEqual(
+    settings.get(settingsNamespace('desktop')),
+    { closeToTray: false },
+    'desktop namespace resolves the schema default',
+  )
+  assert.deepEqual(readCloseBehavior(ctx), { closeToTray: false }, 'readCloseBehavior reads the default')
+})
+
+test('the desktop close-window preference persists and readCloseBehavior follows it', async () => {
+  const settings = ctx!.get('settings')!
+  await settings.update(settingsNamespace('desktop'), { closeToTray: true })
+  assert.deepEqual(readCloseBehavior(ctx!), { closeToTray: true }, 'readCloseBehavior reads the stored preference')
+  await settings.update(settingsNamespace('desktop'), { closeToTray: false })
+  assert.deepEqual(readCloseBehavior(ctx!), { closeToTray: false }, 'readCloseBehavior reads the stored preference')
 })
 
 test('dispatchHttpRequest serves the session-log download surface in-process', async () => {

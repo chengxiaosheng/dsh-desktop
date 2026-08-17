@@ -1,14 +1,16 @@
 /**
  * The renderer↔host IPC bridge.
  *
- * Installs the three channel groups the preload exposes, once per
- * application: the synchronous boot manifest (`sendSync`, read by the
- * preload before page scripts run), the unary/respond `dsh:invoke` channel
- * (RPC envelopes dispatched in-process against the composed `/api` surface,
- * plus raw virtual-host `http-request` download dispatch), and the two
- * downlink stream pumps (`mux`/`host`) pushing host frames to the renderer.
- * The renderer handle is resolved per send, so reloads and window
- * recreation keep working without reinstalling handlers.
+ * Installs the channel groups the preload exposes, once per application: the
+ * synchronous boot manifest (`sendSync`, read by the preload before page
+ * scripts run), the unary/respond `dsh:invoke` channel (RPC envelopes
+ * dispatched in-process against the composed `/api` surface, plus raw
+ * virtual-host `http-request` download dispatch), the two downlink stream
+ * pumps (`mux`/`host`) pushing host frames to the renderer, and the shell
+ * preference channel (`dsh:close-behavior`) serving the close-window
+ * preference to the settings row. The renderer handle is resolved per send,
+ * so reloads and window recreation keep working without reinstalling
+ * handlers.
  */
 
 import { ipcMain, type WebContents } from 'electron'
@@ -16,7 +18,10 @@ import { randomUUID } from 'node:crypto'
 import { toFetchHandler, type ApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { API_PATH } from '@deepseek-ai/dsh-client-connection'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { Context } from '@deepseek-ai/cordis'
+import { readCloseBehavior } from '../src/index.js'
+import { CLOSE_TO_TRAY_FIELD, DESKTOP_SETTINGS_NAMESPACE } from '../src/settings.js'
 import { composeDesktopManifest, dispatchHttpRequest, type DesktopHostConnection, type FetchHandler, type HttpRequestMessage } from './boot-desktop.js'
 
 /** One client->host RPC envelope the renderer carrier sends over the bridge. */
@@ -62,6 +67,31 @@ export function installIpc(ctx: Context, getWebContents: () => WebContents | und
   installBootManifestChannel(ctx)
   installInvokeChannel(ctx, connection)
   installStreamPumps(ctx, getWebContents)
+  installCloseBehaviorChannel(ctx)
+}
+
+/**
+ * The shell preference channel: the settings row reads and writes the
+ * close-window behavior through the bridge. The settings WIRE does not serve
+ * the `desktop` namespace — the host ApiProxy's configuration-client
+ * allowlist covers the shipped web preferences only — so the write goes
+ * through the in-process provider, which is not gated by that allowlist.
+ */
+function installCloseBehaviorChannel(ctx: Context): void {
+  ipcMain.handle('dsh:close-behavior', async (_event, request: unknown): Promise<{ closeToTray: boolean }> => {
+    if (typeof request === 'object' && request !== null) {
+      const body = request as { type?: unknown; value?: unknown }
+      if (body.type === 'write' && typeof body.value === 'boolean') {
+        const settings = ctx.get('settings')
+        if (settings !== undefined) {
+          await settings.update(settingsNamespace(DESKTOP_SETTINGS_NAMESPACE), {
+            [CLOSE_TO_TRAY_FIELD]: body.value,
+          })
+        }
+      }
+    }
+    return readCloseBehavior(ctx)
+  })
 }
 
 /** sendSync channel: the preload reads the rewritten boot graph synchronously before page scripts run. */

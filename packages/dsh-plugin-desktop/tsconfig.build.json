@@ -2,9 +2,11 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
-    "allowImportingTsExtensions": false,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "outDir": "lib",
     "rootDir": "."
   },
-  "include": ["src", "electron"]
+  "include": ["src", "electron"],
+  "exclude": ["src/client"]
 }

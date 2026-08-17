@@ -11,7 +11,8 @@ const { contextBridge, ipcRenderer } = require('electron') as typeof import('ele
 contextBridge.exposeInMainWorld('__DSH_BOOT__', ipcRenderer.sendSync('dsh:boot-manifest'))
 
 // The desktop connection carrier: unary/respond over invoke, downlink streams
-// over the frame channel.
+// over the frame channel, plus the shell preference surface (close-behavior
+// read/write over invoke, tray labels one-way).
 contextBridge.exposeInMainWorld('dshDesktop', {
   invoke: (request: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:invoke', request),
   subscribe: (channel: unknown, listener: (message: unknown) => void): (() => void) => {
@@ -25,4 +26,7 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       ipcRenderer.send('dsh:unsubscribe', channel)
     }
   },
+  getCloseBehavior: (): Promise<unknown> => ipcRenderer.invoke('dsh:close-behavior', { type: 'read' }),
+  setCloseBehavior: (value: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:close-behavior', { type: 'write', value }),
+  sendLocale: (labels: unknown): void => { ipcRenderer.send('dsh:locale', labels) },
 })

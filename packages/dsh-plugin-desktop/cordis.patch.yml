@@ -39,7 +39,9 @@
         host: '127.0.0.1'
         port: 0
 
-    # Desktop shell row (placeholder for the native lifecycle plugin).
+    # Desktop shell row: registers the durable `desktop` settings namespace
+    # (close-window behavior); its client half contributes the General
+    # settings row, present only in the desktop composition.
     - id: desktop-shell
       name: dsh-plugin-desktop
 

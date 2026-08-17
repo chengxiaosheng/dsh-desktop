@@ -10,23 +10,33 @@
   "exports": {
     ".": "./lib/src/index.js",
     "./webserver": "./lib/src/webserver.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "slots",
+        "locale"
+      ],
+      "platform": "web",
+      "immediately": true
     }
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/build-client.mts",
+    "build:client": "node scripts/build-client.mts",
     "test": "node --test tests/*.spec.ts",
-    "verify:boot": "node --test tests/*.spec.ts",
+    "verify:boot": "pnpm run build:client && node --test tests/*.spec.ts",
     "verify:packaged": "node scripts/verify-packaged-boot.mts",
     "start": "electron .",
-    "check": "tsc -p tsconfig.json && node --test tests/*.spec.ts",
+    "check": "pnpm run build && tsc -p tsconfig.json && pnpm run test",
     "package:prepare": "pnpm run build && node scripts/materialize.mts",
     "package:dir": "node scripts/dist.mts --dir",
     "dist:mac": "node scripts/dist.mts --mac",
@@ -217,8 +227,11 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
+    "@types/react": "^18.3.0",
     "electron": "43.4.0",
     "electron-builder": "26.15.3",
+    "esbuild": "^0.25.0",
+    "react": "^18.2.0",
     "typescript": "^5.9.2"
   },
   "main": "lib/electron/main.js"

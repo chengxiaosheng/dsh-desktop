@@ -3,38 +3,44 @@
  *
  * Owns application lifecycle only: the single-instance lock, the in-process
  * host boot (delegated to boot-desktop - no Node HTTP server, no port), the
- * once-per-application IPC install, the main window's lifetime, and the
- * graceful fiber dispose on quit. Window creation (`window`), the renderer
- * bridge (`ipc`), the menu (`menu`), renderer diagnostics (`diagnostics`),
- * and boot-failure formatting (`errors`) each live in their own module;
- * future shell capabilities (tray, updates, terminal) mount alongside them
- * here.
+ * once-per-application IPC install, the main window's lifetime (including
+ * the close-to-tray interception), the tray, and the graceful fiber dispose
+ * on quit. Window creation (`window`), the renderer bridge (`ipc`), the menu
+ * (`menu`), the tray (`tray`), renderer diagnostics (`diagnostics`), and
+ * boot-failure formatting (`errors`) each live in their own module; future
+ * shell capabilities (updates, terminal) mount alongside them here.
  */
 
-import { app, dialog, type BrowserWindow } from 'electron'
+import { app, dialog, type BrowserWindow, type Tray } from 'electron'
 import type { Context } from '@deepseek-ai/cordis'
 import { bootDesktop } from './boot-desktop.js'
 import { installRendererDiagnostics } from './diagnostics.js'
 import { formatBootError } from './errors.js'
 import { installIpc } from './ipc.js'
 import { installApplicationMenu } from './menu.js'
+import { installTray, installTrayLocaleChannel } from './tray.js'
 import { createMainWindow } from './window.js'
+import { readCloseBehavior } from '../src/index.js'
 
 /** Application identity; matches `appId` in electron-builder.yml. */
 const APP_ID = 'ai.deepseek.dsh.desktop'
 
 let ctx: Context | undefined
 let win: BrowserWindow | undefined
+let tray: Tray | undefined
 let opening: Promise<void> | undefined
 let isDisposing = false
+/** Set once a real quit begins, so the close-to-tray interception lets the window go. */
+let isQuitting = false
 
 if (!app.requestSingleInstanceLock()) {
   // A running instance owns this profile home; quit without touching it.
   app.quit()
 } else {
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
+  app.on('before-quit', () => { isQuitting = true })
   app.on('second-instance', focusOrReopen)
-  app.on('activate', () => { void ensureMainWindow() })
+  app.on('activate', focusOrReopen)
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
   })
@@ -44,6 +50,8 @@ if (!app.requestSingleInstanceLock()) {
     if (ctx === undefined || isDisposing) return
     isDisposing = true
     event.preventDefault()
+    tray?.destroy()
+    tray = undefined
     const disposing = ctx
     ctx = undefined
     void disposing.fiber.dispose()
@@ -57,8 +65,12 @@ if (!app.requestSingleInstanceLock()) {
 async function bootShell(): Promise<void> {
   ctx = await bootDesktop()
   installIpc(ctx, () => win?.webContents)
+  // The tray-label channel must precede the window: the renderer publishes
+  // its locale copy during boot, and the first send must not be lost.
+  installTrayLocaleChannel()
   installApplicationMenu()
   await ensureMainWindow()
+  tray = installTray(() => win)
 }
 
 /** Open the main window unless one exists or an open is already in flight. */
@@ -69,19 +81,29 @@ function ensureMainWindow(): Promise<void> {
 }
 
 async function openMainWindow(): Promise<void> {
-  if (ctx === undefined) return
-  const window = await createMainWindow(ctx)
+  const host = ctx
+  if (host === undefined) return
+  const window = await createMainWindow(host)
   window.on('closed', () => { if (win === window) win = undefined })
+  window.on('close', (event) => {
+    // Close-to-tray: hide instead of destroying unless a real quit is
+    // underway (tray quit, Cmd+Q, or quit while the preference is off).
+    if (!isQuitting && readCloseBehavior(host).closeToTray) {
+      event.preventDefault()
+      window.hide()
+    }
+  })
   installRendererDiagnostics(window)
   win = window
 }
 
-/** Focus the running instance's window; recreate it when none survived (macOS). */
+/** Focus the running instance's window; recreate or reveal it when none is visible. */
 function focusOrReopen(): void {
   if (win === undefined) {
     void ensureMainWindow()
     return
   }
+  if (!win.isVisible()) win.show()
   if (win.isMinimized()) win.restore()
   win.focus()
 }
