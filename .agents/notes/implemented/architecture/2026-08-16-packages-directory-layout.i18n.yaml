@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   git hash-object <file>
+2026-08-16-packages-directory-layout.md: a3360b3892ff6ef611ba8d6d091a079cdec5feba
+2026-08-16-packages-directory-layout.zh.md: 256e5d0532c3f4403d6933427e53c4c82e9197a4

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   git hash-object <file>
+2026-08-16-root-build-and-start-scripts.md: fa101e5142aff1972bfef03a0f4ee6da2a88a586
+2026-08-16-root-build-and-start-scripts.zh.md: 6115dd5bb13d813259ac2c75be56d3fc8d95b49c

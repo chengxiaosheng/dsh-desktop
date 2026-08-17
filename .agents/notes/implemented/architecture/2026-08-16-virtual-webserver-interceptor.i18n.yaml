@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   git hash-object <file>
+2026-08-16-virtual-webserver-interceptor.md: f3c324fc232d04b5e87f5421914c59bce1d9a236
+2026-08-16-virtual-webserver-interceptor.zh.md: c88205b3cdd4b9fb3844a3bde957be01d45677fc

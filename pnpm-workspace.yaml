@@ -1,0 +1,14 @@
+packages:
+  - packages/dsh-plugin-desktop
+  - packages/dsh-plugin-desktop-connection
+
+# pnpm blocks dependency build scripts by default; allow the native modules the
+# DSH subprocess/terminal capability needs at runtime.
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': true
+  '@google/genai': true
+  esbuild: true
+  electron: true
+  koffi: true
+  node-pty: true
+  protobufjs: true

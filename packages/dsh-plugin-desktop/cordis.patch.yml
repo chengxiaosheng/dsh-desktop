@@ -1,0 +1,51 @@
+# DSH Desktop composition — the virtual-webserver interceptor + IPC renderer
+# connection.
+#
+# This patch layer replaces the official socket-listening webserver with the
+# socketless virtual webserver provided by this plugin, so the official
+# `connection` and `modules` rows activate unchanged while the desktop transport
+# dispatches in-process over IPC instead of a loopback socket. It also replaces
+# the official `connection` row with the desktop connection package whose node
+# half re-exports the official apply and whose client half provides
+# `ctx.connection` over the Electron IPC bridge. Applied after the `dsh-web-app`
+# layer; the profile's own cordis.patch.yml and any --patch overlays still come
+# later.
+
+# Disable the official socket-listening webserver row; the virtual provider below
+# supplies the `webServer` service instead.
+- id: webserver
+  disabled: true
+
+# Disable the official `connection` row: its client half would otherwise provide
+# the HTTP/WebSocket carrier. A patch layer cannot change a row's package name
+# (the `name` field on a patch is a guard, not a rename), so the desktop
+# connection package mounts as a new row below.
+- id: connection
+  disabled: true
+
+- insert:
+    # Desktop connection row: node half re-exports the official
+    # `@deepseek-ai/dsh-client-connection` apply (HostConnectionService + /api +
+    # downlinks unchanged); client half provides `ctx.connection` over the
+    # Electron IPC bridge. Declares `dsh.client`, so it is the only
+    # `connection` provider in the graph.
+    - id: desktop-connection
+      name: dsh-plugin-desktop-connection
+
+    # Virtual (socketless) webServer provider — the interceptor.
+    - id: desktop-webserver
+      name: dsh-plugin-desktop/webserver
+      config:
+        host: '127.0.0.1'
+        port: 0
+
+    # Desktop shell row (placeholder for the native lifecycle plugin).
+    - id: desktop-shell
+      name: dsh-plugin-desktop
+
+# A desktop launch has no terminal operator waiting for the Web readiness line.
+- id: web-runtime
+  config:
+    printUrl: false
+    surfaceContext: true
+    trustedHosts: []

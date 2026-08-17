@@ -1,0 +1,8 @@
+.DS_Store
+node_modules/
+*.tsbuildinfo
+.tmp-home/
+packages/dsh-plugin-desktop/lib/
+packages/dsh-plugin-desktop/dist/
+packages/dsh-plugin-desktop-connection/lib/
+pnpm-lock.yaml
