@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   git hash-object <file>
-2026-08-16-upstream-as-published-packages.md: 453aec5b1f7178bcfdcf99bb9a8faeb6e8f67947
-2026-08-16-upstream-as-published-packages.zh.md: 829dab34e684370e21ec090cc987c79a19fcb571
+2026-08-17-upstream-dist-tag-floating.md: a2139ae5b0caf3f9949475d414005affa5e64131
+2026-08-17-upstream-dist-tag-floating.zh.md: d30e1f95fdd9e3a2b96ba16b0af5bd98b07837a6

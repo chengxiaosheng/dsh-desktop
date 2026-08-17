@@ -12,3 +12,9 @@ allowBuilds:
   koffi: true
   node-pty: true
   protobufjs: true
+  electron-winstaller: false
+
+# app-builder-lib needs @electron/get >= 3.1.0 for ElectronDownloadCacheMode;
+# the ^3.0.0 range otherwise resolves to 3.0.0 which lacks the enum.
+overrides:
+  'app-builder-lib>@electron/get': ^3.1.0

@@ -4,12 +4,15 @@ The desktop shell package: the socketless `webServer` interceptor, the shell row
 
 ## Entries
 
-| Entry | Provides |
+All runtime sources are TypeScript; `pnpm build` compiles `src/` + `electron/` with `tsc` into `lib/` (the compiled paths below), and `pnpm check` adds a strict type-check of sources, scripts, and tests.
+
+| Entry (source → compiled) | Provides |
 |---|---|
-| `dsh-plugin-desktop/webserver` | `webServer` as `VirtualWebServer` — the official route-registry contract with no socket |
-| `dsh-plugin-desktop` (default) | the shell row (placeholder for native lifecycle) |
-| `electron/main.js` | the Electron main: profile boot, `file://` page, IPC bridge (envelope RPC + raw virtual-host `http-request` download surface) |
-| `electron/boot-desktop.js` | headless-testable `bootDesktop` + `composeDesktopPatches` + `composeDesktopManifest` + `dispatchHttpRequest` |
+| `dsh-plugin-desktop/webserver` (`src/webserver.ts` → `lib/src/webserver.js`) | `webServer` as `VirtualWebServer` — the official route-registry contract with no socket |
+| `dsh-plugin-desktop` (default) (`src/index.ts` → `lib/src/index.js`) | the shell row (placeholder for native lifecycle) |
+| `electron/main.ts` → `lib/electron/main.js` | the Electron main: profile boot, `file://` page, IPC bridge (envelope RPC + raw virtual-host `http-request` download surface) |
+| `electron/boot-desktop.ts` → `lib/electron/boot-desktop.js` | headless-testable `bootDesktop` + `composeDesktopPatches` + `composeDesktopManifest` + `dispatchHttpRequest` |
+| `electron/preload.cts` → `lib/electron/preload.cjs` | the preload bridge (`__DSH_BOOT__` + `dshDesktop`), plain CJS by Electron's preload contract |
 
 ## Config
 

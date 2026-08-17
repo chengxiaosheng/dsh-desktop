@@ -1,0 +1,73 @@
+# DSH Desktop packaging configuration (electron-builder).
+#
+# The app payload is staged by scripts/materialize.mts before this config
+# runs: dist-pack/ is the thin asar app (bootstrap main importing the real
+# runtime from resources/host), and dist-host/ ships as extraResources ->
+# resources/host with the compiled runtime and the flat dependency closure
+# the packaged boot resolves every plugin row from. Installers build on
+# their native host only (guarded by scripts/electron-builder.mts); code
+# signing is off by default (CSC_IDENTITY_AUTO_DISCOVERY=false in the
+# wrapper).
+
+appId: ai.deepseek.dsh.desktop
+productName: DSH Desktop
+executableName: dsh-desktop
+asar: true
+# Publishing is a release-pipeline decision, not a build step: the builder
+# never uploads. Set a provider here when an update channel exists.
+publish: null
+directories:
+  app: dist-pack
+  output: dist
+  buildResources: build
+files:
+  - lib/**
+  - package.json
+extraResources:
+  - from: dist-host/electron
+    to: host/electron
+  - from: dist-host/src
+    to: host/src
+  - from: dist-host/cordis.patch.yml
+    to: host/cordis.patch.yml
+  - from: dist-host/build
+    to: host/build
+  - from: dist-host/package.json
+    to: host/package.json
+  - from: dist-host/platform.json
+    to: host/platform.json
+  - from: dist-host/node_modules
+    to: host/node_modules
+npmRebuild: false
+mac:
+  target:
+    - dmg
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  hardenedRuntime: true
+  artifactName: DSH-Desktop-${version}-${arch}.${ext}
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: DSH Desktop
+  artifactName: DSH-Desktop-${version}-${arch}-Setup.${ext}
+linux:
+  target:
+    - AppImage
+    - deb
+    - rpm
+  icon: build/icon.png
+  category: Development
+  synopsis: DSH Desktop
+  maintainer: DeepSeek AI
+  artifactName: DSH-Desktop-${version}-${arch}.${ext}

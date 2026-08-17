@@ -1,0 +1,104 @@
+/**
+ * Electron main composition root for DSH Desktop.
+ *
+ * Owns application lifecycle only: the single-instance lock, the in-process
+ * host boot (delegated to boot-desktop - no Node HTTP server, no port), the
+ * once-per-application IPC install, the main window's lifetime, and the
+ * graceful fiber dispose on quit. Window creation (`window`), the renderer
+ * bridge (`ipc`), the menu (`menu`), renderer diagnostics (`diagnostics`),
+ * and boot-failure formatting (`errors`) each live in their own module;
+ * future shell capabilities (tray, updates, terminal) mount alongside them
+ * here.
+ */
+
+import { app, dialog, type BrowserWindow } from 'electron'
+import type { Context } from '@deepseek-ai/cordis'
+import { bootDesktop } from './boot-desktop.js'
+import { installRendererDiagnostics } from './diagnostics.js'
+import { formatBootError } from './errors.js'
+import { installIpc } from './ipc.js'
+import { installApplicationMenu } from './menu.js'
+import { createMainWindow } from './window.js'
+
+/** Application identity; matches `appId` in electron-builder.yml. */
+const APP_ID = 'ai.deepseek.dsh.desktop'
+
+let ctx: Context | undefined
+let win: BrowserWindow | undefined
+let opening: Promise<void> | undefined
+let isDisposing = false
+
+if (!app.requestSingleInstanceLock()) {
+  // A running instance owns this profile home; quit without touching it.
+  app.quit()
+} else {
+  if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
+  app.on('second-instance', focusOrReopen)
+  app.on('activate', () => { void ensureMainWindow() })
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+  app.on('will-quit', (event) => {
+    // Dispose the host fiber before exit so profile writes unwind cleanly;
+    // app.exit below terminates without re-emitting this event.
+    if (ctx === undefined || isDisposing) return
+    isDisposing = true
+    event.preventDefault()
+    const disposing = ctx
+    ctx = undefined
+    void disposing.fiber.dispose()
+      .catch((error) => console.error('dsh-desktop: host dispose failed:', error))
+      .finally(() => app.exit(0))
+  })
+  app.whenReady().then(bootShell).catch((error) => { void fatal(error) })
+}
+
+/** Boot the host once, install the per-application surfaces, then open the window. */
+async function bootShell(): Promise<void> {
+  ctx = await bootDesktop()
+  installIpc(ctx, () => win?.webContents)
+  installApplicationMenu()
+  await ensureMainWindow()
+}
+
+/** Open the main window unless one exists or an open is already in flight. */
+function ensureMainWindow(): Promise<void> {
+  if (win !== undefined || opening !== undefined) return opening ?? Promise.resolve()
+  opening = openMainWindow().finally(() => { opening = undefined })
+  return opening
+}
+
+async function openMainWindow(): Promise<void> {
+  if (ctx === undefined) return
+  const window = await createMainWindow(ctx)
+  window.on('closed', () => { if (win === window) win = undefined })
+  installRendererDiagnostics(window)
+  win = window
+}
+
+/** Focus the running instance's window; recreate it when none survived (macOS). */
+function focusOrReopen(): void {
+  if (win === undefined) {
+    void ensureMainWindow()
+    return
+  }
+  if (win.isMinimized()) win.restore()
+  win.focus()
+}
+
+/**
+ * Report a boot failure and exit non-zero: one console line per underlying
+ * error always, plus a native dialog when packaged (a headless failure on a
+ * shipped build would otherwise look like a silently dead app).
+ */
+async function fatal(error: unknown): Promise<void> {
+  const lines = formatBootError(error)
+  for (const line of lines) console.error('dsh-desktop: failed to start:', line)
+  if (app.isPackaged) dialog.showErrorBox('DSH Desktop', lines.join('\n'))
+  if (ctx !== undefined) {
+    const disposing = ctx
+    ctx = undefined
+    await disposing.fiber.dispose().catch((err) => console.error('dsh-desktop: host dispose failed:', err))
+  }
+  app.exit(1)
+}

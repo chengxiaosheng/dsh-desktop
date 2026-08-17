@@ -6,7 +6,7 @@ Read this before changing `packages/dsh-plugin-desktop/` or `packages/dsh-plugin
 
 The desktop is a Cordis plugin tree composed at boot from ordered layers, exactly like the DeepSeek Harness it wraps. Every capability — the socketless webserver, the renderer wire client, the shell — is a plugin row mounted by a patch layer, so each is replaceable from configuration without changing any published package.
 
-The desktop runtime depends on **published** `@deepseek-ai/*` npm packages pinned in `packages/dsh-plugin-desktop/package.json` at the version recorded in [`upstream.json`](../upstream.json); there is no upstream source checkout in this repository.
+The desktop runtime depends on **published** `@deepseek-ai/*` npm packages resolved from the dist-tags recorded in [`upstream.json`](../upstream.json) (`next` for the dsh family, `latest` for the cordis framework); `pnpm-lock.yaml` is not committed, so `pnpm install` resolves the tags fresh. There is no upstream source checkout in this repository.
 
 ## The zero-socket transport
 
@@ -36,6 +36,6 @@ The desktop product runs the full Web UI with no Node HTTP server and no port:
 - The renderer bridge contract (`DshDesktopBridge`) is the only Electron dependency the connection carrier knows; the Electron main implements it.
 - The Electron shell (window, tray, terminal, updates) grows as desktop-owned rows in `dsh-plugin-desktop`.
 
-## Upstream pins
+## Upstream provenance
 
-`upstream.json` records the pinned source commit and the published runtime package family independently. An upstream update changes the runtime family in `packages/dsh-plugin-desktop/package.json` and the pinned commit in `upstream.json` in a dedicated change. The pinned `ConnectionController` copy in `dsh-plugin-desktop-connection` re-applies from the upstream source (`sourcePath` at the recorded commit) on a runtime family bump.
+`upstream.json` records the dist-tags the runtime family resolves from (`next` for the dsh family, `latest` for the cordis framework) and the provenance of the pinned `ConnectionController` copy independently: the source version it was taken from, the upstream commit for that version, and the upstream `sourcePath` to re-apply from. `pnpm-lock.yaml` is not committed, so `pnpm install` resolves the dist-tags fresh and an upstream release flows in on the next install. The pinned `ConnectionController` copy in `dsh-plugin-desktop-connection` re-applies from the upstream source (`sourcePath` at the recorded commit) whenever `verify:upstream` reports the installed `@deepseek-ai/dsh-client-connection` differs from the recorded version.

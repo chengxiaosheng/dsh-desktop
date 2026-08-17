@@ -1,5 +1,5 @@
 /**
- * Tests for the desktop virtual-host HTTP bridge (`host-http.js`).
+ * Tests for the desktop virtual-host HTTP bridge (`host-http.ts`).
  *
  * Runs in plain Node with a fake preload bridge, matching the client-half test
  * style: the bridge only touches fetch/Response/URL/Blob/atob, all Node globals.
@@ -17,7 +17,8 @@ import {
   patchDownloadClicks,
   patchFetch,
   saveVirtualHostDownload,
-} from '../src/client/host-http.js'
+} from '../src/client/host-http.ts'
+import type { DshDesktopBridge } from '../src/client/ipc-api-client.ts'
 
 const EXPORT_URL = 'http://dsh.internal/api/session.export?sessionId=s1&includeDescendants=true'
 /** The URL the upstream controller actually builds on the desktop's file:// page. */
@@ -39,12 +40,13 @@ test('isDesktopHostUrl also matches the file:// /api plane of the desktop page',
 })
 
 test('patchFetch routes a virtual-host HEAD probe over the bridge', async () => {
-  const requests = []
-  const bridge = {
+  const requests: unknown[] = []
+  const bridge: DshDesktopBridge = {
     invoke: async (request) => {
       requests.push(request)
       return { status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: '' }
     },
+    subscribe: () => () => {},
   }
   const restore = patchFetch(bridge)
   try {
@@ -63,12 +65,13 @@ test('patchFetch routes a virtual-host HEAD probe over the bridge', async () => 
 })
 
 test('patchFetch routes the file:// /api URL the desktop page actually builds', async () => {
-  const requests = []
-  const bridge = {
+  const requests: unknown[] = []
+  const bridge: DshDesktopBridge = {
     invoke: async (request) => {
       requests.push(request)
       return { status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: '' }
     },
+    subscribe: () => () => {},
   }
   const restore = patchFetch(bridge)
   try {
@@ -87,8 +90,9 @@ test('patchFetch routes the file:// /api URL the desktop page actually builds', 
 
 test('patchFetch GET returns the decoded host body', async () => {
   const payload = 'PK\x03\x04fake-zip-bytes'
-  const bridge = {
+  const bridge: DshDesktopBridge = {
     invoke: async () => ({ status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: btoa(payload) }),
+    subscribe: () => () => {},
   }
   const restore = patchFetch(bridge)
   try {
@@ -101,8 +105,9 @@ test('patchFetch GET returns the decoded host body', async () => {
 })
 
 test('patchFetch forwards a non-ok status as a Response the caller can read', async () => {
-  const bridge = {
+  const bridge: DshDesktopBridge = {
     invoke: async () => ({ status: 400, headers: {}, bodyBase64: btoa('missing or invalid sessionId query parameter') }),
+    subscribe: () => () => {},
   }
   const restore = patchFetch(bridge)
   try {
@@ -116,7 +121,10 @@ test('patchFetch forwards a non-ok status as a Response the caller can read', as
 })
 
 test('patchFetch rejects an already-aborted virtual-host request', async () => {
-  const bridge = { invoke: async () => { throw new Error('must not be invoked after abort') } }
+  const bridge: DshDesktopBridge = {
+    invoke: async () => { throw new Error('must not be invoked after abort') },
+    subscribe: () => () => {},
+  }
   const restore = patchFetch(bridge)
   try {
     const controller = new AbortController()
@@ -132,11 +140,12 @@ test('patchFetch rejects an already-aborted virtual-host request', async () => {
 
 test('patchFetch passes through non-virtual-host requests', async () => {
   let originalCalled = false
-  const stub = async () => { originalCalled = true; return new Response('ok', { status: 200 }) }
+  const stub = async (): Promise<Response> => { originalCalled = true; return new Response('ok', { status: 200 }) }
   const real = globalThis.fetch
   globalThis.fetch = stub
   const restore = patchFetch({
     invoke: async () => { throw new Error('bridge must not be invoked for foreign hosts') },
+    subscribe: () => () => {},
   })
   try {
     const response = await fetch('https://example.com/x')
@@ -150,7 +159,7 @@ test('patchFetch passes through non-virtual-host requests', async () => {
 
 test('patchFetch disposer restores the original fetch', async () => {
   const real = globalThis.fetch
-  const restore = patchFetch({ invoke: async () => ({ status: 200, headers: {}, bodyBase64: '' }) })
+  const restore = patchFetch({ invoke: async () => ({ status: 200, headers: {}, bodyBase64: '' }), subscribe: () => () => {} })
   assert.notEqual(globalThis.fetch, real, 'fetch patched')
   restore()
   assert.equal(globalThis.fetch, real, 'fetch restored')
@@ -162,25 +171,26 @@ test('decodeBase64 decodes bytes and an empty string', () => {
 })
 
 test('saveVirtualHostDownload saves the GET body as a blob download', async () => {
-  const created = []
+  const created: Array<{ href: string; download: string; click: () => void }> = []
   const originalDocument = globalThis.document
   globalThis.document = {
-    createElement: (tag) => {
+    createElement: (tag: string) => {
       const anchor = { tag, href: '', download: '', click: () => created.push(anchor) }
       return anchor
     },
-  }
+  } as unknown as Document
   const originalCreateObjectURL = URL.createObjectURL
   const originalRevokeObjectURL = URL.revokeObjectURL
   URL.createObjectURL = () => 'blob:test'
   URL.revokeObjectURL = () => {}
   try {
-    const requests = []
-    const bridge = {
+    const requests: unknown[] = []
+    const bridge: DshDesktopBridge = {
       invoke: async (request) => {
         requests.push(request)
         return { status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: btoa('zip') }
       },
+      subscribe: () => () => {},
     }
     await saveVirtualHostDownload(bridge, new URL(EXPORT_URL), 'dsh-session-s1.zip')
     assert.deepEqual(requests, [{ type: 'http-request', method: 'GET', path: '/api/session.export', search: '?sessionId=s1&includeDescendants=true' }])
@@ -195,7 +205,10 @@ test('saveVirtualHostDownload saves the GET body as a blob download', async () =
 })
 
 test('saveVirtualHostDownload rejects on a non-2xx answer', async () => {
-  const bridge = { invoke: async () => ({ status: 404, headers: {}, bodyBase64: '' }) }
+  const bridge: DshDesktopBridge = {
+    invoke: async () => ({ status: 404, headers: {}, bodyBase64: '' }),
+    subscribe: () => () => {},
+  }
   await assert.rejects(
     saveVirtualHostDownload(bridge, new URL(EXPORT_URL), 'x.zip'),
     /answered HTTP 404/,
@@ -204,19 +217,19 @@ test('saveVirtualHostDownload rejects on a non-2xx answer', async () => {
 
 /** Install a fake document and invoke the click listener patchDownloadClicks registers. */
 function captureClickHandler() {
-  const holder = {}
+  const holder: { listener: ((event: MouseEvent) => void) | undefined; capture: boolean } = { listener: undefined, capture: false }
   const originalDocument = globalThis.document
   globalThis.document = {
-    addEventListener: (type, listener, capture) => {
+    addEventListener: (type: string, listener: (event: MouseEvent) => void, capture?: boolean) => {
       holder.listener = listener
-      holder.capture = capture
+      holder.capture = capture === true
     },
     removeEventListener: () => {},
     createElement: () => {
       const anchor = { href: '', download: '', click: () => {} }
       return anchor
     },
-  }
+  } as unknown as Document
   return { holder, restore: () => { globalThis.document = originalDocument } }
 }
 
@@ -227,15 +240,18 @@ test('patchDownloadClicks intercepts virtual-host anchor downloads and prevents 
   URL.createObjectURL = () => 'blob:test'
   URL.revokeObjectURL = () => {}
   try {
-    const requests = []
-    const bridge = { invoke: async (request) => { requests.push(request); return { status: 200, headers: {}, bodyBase64: btoa('zip') } } }
+    const requests: unknown[] = []
+    const bridge: DshDesktopBridge = {
+      invoke: async (request) => { requests.push(request); return { status: 200, headers: {}, bodyBase64: btoa('zip') } },
+      subscribe: () => () => {},
+    }
     const remove = patchDownloadClicks(bridge)
     assert.equal(holder.capture, true, 'capture-phase interception')
     let prevented = false
-    holder.listener({
+    holder.listener?.({
       target: { href: EXPORT_URL, download: 'dsh-session-s1.zip' },
       preventDefault: () => { prevented = true },
-    })
+    } as unknown as MouseEvent)
     assert.equal(prevented, true, 'default navigation prevented')
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.deepEqual(requests, [{ type: 'http-request', method: 'GET', path: '/api/session.export', search: '?sessionId=s1&includeDescendants=true' }])
@@ -251,13 +267,16 @@ test('patchDownloadClicks leaves non-virtual-host clicks alone', async () => {
   const { holder, restore } = captureClickHandler()
   try {
     let invoked = false
-    const bridge = { invoke: async () => { invoked = true; return { status: 200, headers: {}, bodyBase64: '' } } }
+    const bridge: DshDesktopBridge = {
+      invoke: async () => { invoked = true; return { status: 200, headers: {}, bodyBase64: '' } },
+      subscribe: () => () => {},
+    }
     const remove = patchDownloadClicks(bridge)
     let prevented = false
-    holder.listener({
+    holder.listener?.({
       target: { href: 'https://example.com/api/session.export', download: 'x.zip' },
       preventDefault: () => { prevented = true },
-    })
+    } as unknown as MouseEvent)
     assert.equal(prevented, false)
     assert.equal(invoked, false)
     remove()
@@ -278,13 +297,13 @@ function captureAnchorEnvironment() {
   URL.createObjectURL = () => 'blob:test'
   URL.revokeObjectURL = () => {}
   globalThis.document = {
-    createElement: (tag) => {
+    createElement: (tag: string) => {
       const anchor = { tag, href: '', download: '', click: () => {} }
       return anchor
     },
-  }
-  const proto = { click() { throw new Error('native click must not run') } }
-  globalThis.HTMLAnchorElement = { prototype: proto }
+  } as unknown as Document
+  const proto: { click(): void } = { click() { throw new Error('native click must not run') } }
+  globalThis.HTMLAnchorElement = { prototype: proto } as unknown as typeof HTMLAnchorElement
   return {
     proto,
     restore: () => {
@@ -299,10 +318,13 @@ function captureAnchorEnvironment() {
 test('patchAnchorClick diverts a detached virtual-host anchor click to the bridge', async () => {
   const { proto, restore } = captureAnchorEnvironment()
   try {
-    const requests = []
-    const bridge = { invoke: async (request) => { requests.push(request); return { status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: btoa('zip') } } }
+    const requests: unknown[] = []
+    const bridge: DshDesktopBridge = {
+      invoke: async (request) => { requests.push(request); return { status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: btoa('zip') } },
+      subscribe: () => () => {},
+    }
     const remove = patchAnchorClick(bridge)
-    proto.click.call({ href: FILE_EXPORT_URL, download: 'dsh-session-s1.zip' })
+    proto.click.call({ href: FILE_EXPORT_URL, download: 'dsh-session-s1.zip' } as unknown as HTMLAnchorElement)
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.deepEqual(requests, [{ type: 'http-request', method: 'GET', path: '/api/session.export', search: '?sessionId=s1&includeDescendants=true' }])
     remove()
@@ -314,10 +336,13 @@ test('patchAnchorClick diverts a detached virtual-host anchor click to the bridg
 test('patchAnchorClick leaves foreign and non-API clicks native', async () => {
   const { proto, restore } = captureAnchorEnvironment()
   try {
-    const nativeCalls = []
-    proto.click = function click() { nativeCalls.push(this.href) }
-    const invoked = []
-    const bridge = { invoke: async () => { invoked.push(1); return { status: 200, headers: {}, bodyBase64: '' } } }
+    const nativeCalls: string[] = []
+    proto.click = function click(this: { href: string }) { nativeCalls.push(this.href) }
+    const invoked: number[] = []
+    const bridge: DshDesktopBridge = {
+      invoke: async () => { invoked.push(1); return { status: 200, headers: {}, bodyBase64: '' } },
+      subscribe: () => () => {},
+    }
     const remove = patchAnchorClick(bridge)
     proto.click.call({ href: 'https://example.com/x.zip', download: 'x.zip' })
     proto.click.call({ href: 'file:///assets/app.js', download: 'app.js' })

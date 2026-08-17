@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-仓库只以已发布 npm 包消费上游。`packages/dsh-plugin-desktop/package.json` 把所有 `@deepseek-ai/*` 依赖 pin 在运行时版本族，`pnpm-lock.yaml` 固定精确解析，[`upstream.json`](../../../../upstream.json) 独立记录上游溯源：pin 的源码 commit、运行时包版本族、以及 `sourcePath`——即 `dsh-plugin-desktop-connection` 中固定副本 `ConnectionController` 重应用所依据的上游文件。submodule 的 gitlink、`.gitmodules` 与 submodule 工作区已删除。上游升级是一次专门的变更：同时提升 `package.json` 的运行时版本族与 `upstream.json` 的 pin commit。
+仓库只以已发布 npm 包消费上游。所有 `@deepseek-ai/*` 依赖在 install 时按 [`upstream.json`](../../../../upstream.json) 记录的 dist-tag 解析（dsh 家族为 `next`，cordis 框架为 `latest`；不提交 lockfile——见 [上游以 dist-tag 浮动解析](2026-08-17-upstream-dist-tag-floating.zh.md)），`upstream.json` 独立记录上游溯源：pin 的源码 commit、运行时包版本族、以及 `sourcePath`——即 `dsh-plugin-desktop-connection` 中固定副本 `ConnectionController` 重应用所依据的上游文件。submodule 的 gitlink、`.gitmodules` 与 submodule 工作区已删除。
 
 ## Alternatives considered
 

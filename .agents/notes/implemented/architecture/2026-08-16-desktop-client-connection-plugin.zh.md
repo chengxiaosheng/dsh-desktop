@@ -12,7 +12,7 @@ English | [中文](2026-08-16-desktop-client-connection-plugin.zh.md)
 
 桌面组合层禁用官方 `connection` 行，并把 `dsh-plugin-desktop-connection` 作为新行 `desktop-connection` 挂载。patch 层不能改行的包名（patch 上的 `name` 是守卫而非改名），所以替换方式是"禁用 + 插入"而非改名。
 
-- **节点半身**（`dsh-plugin-desktop-connection` 的 `src/index.js`）原样 re-export 官方 `@deepseek-ai/dsh-client-connection` 的 apply：`HostConnectionService`、`/api` prefix 路由、两条下行 upgrade 路由与 web profile 完全一致，挂载在虚拟 `webServer` 之上。
+- **节点半身**（`dsh-plugin-desktop-connection` 的 `src/index.ts`）原样 re-export 官方 `@deepseek-ai/dsh-client-connection` 的 apply：`HostConnectionService`、`/api` prefix 路由、两条下行 upgrade 路由与 web profile 完全一致，挂载在虚拟 `webServer` 之上。
 - **客户端半身**（构建到 `lib/client.js`，由 `dsh.client` 声明、`exports["./client"]` 提供）打包了一个 `IpcApiClient`——`AbstractApiClient` 子类，其 `doFetch` 经 preload 桥的 `invoke` 走 unary/respond，`openMux`/`openHost` 经桥的 `subscribe` 泵两条下行流——外加一份固定版本、载波无关的官方 `ConnectionController` 副本（构造器只收 `IApiClient`），并装配标准 `ctx.connection` ConnectionHandle。桥契约（`DshDesktopBridge`）是本载波知道的唯一 Electron 依赖。同一客户端 bundle 还承载[虚拟主机下载桥接](../bug-fix/2026-08-16-desktop-session-log-download.zh.md)，把 session 日志导出的原生 `fetch` 与 anchor 下载改经桥接分发。
 
 `dsh.client` 只声明在 `dsh-plugin-desktop-connection` 上，且该包只被一个行引用：client-modules 表按行名键控、不做按包去重——一个被多个行引用的包会按行各发射一次 client bundle，而同一作用域内两个 `connection` provider 会被 Cordis 拒绝（`service "connection" has been registered`）。

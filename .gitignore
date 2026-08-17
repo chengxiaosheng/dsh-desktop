@@ -4,5 +4,9 @@ node_modules/
 .tmp-home/
 packages/dsh-plugin-desktop/lib/
 packages/dsh-plugin-desktop/dist/
+packages/dsh-plugin-desktop/dist-pack/
+packages/dsh-plugin-desktop/dist-host/
+packages/dsh-plugin-desktop-connection/dist/
 packages/dsh-plugin-desktop-connection/lib/
 pnpm-lock.yaml
+settings.local.json

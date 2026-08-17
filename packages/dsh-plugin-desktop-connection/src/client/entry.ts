@@ -7,9 +7,9 @@
  * `exports["./client"]` serves.
  */
 
-import { apply, inject } from './plugin.js'
+import { apply, inject } from './plugin.ts'
 
-window.__ModuleLoader__.load({
+window.__ModuleLoader__!.load({
   id: 'dsh-plugin-desktop-connection',
   factory: () => ({ apply, inject }),
 })

@@ -6,14 +6,16 @@
  * profiles) grows here later, mirroring the deepseek-harness-desktop product.
  */
 
+import type { Context } from '@deepseek-ai/cordis'
+
 /** No hard dependencies. */
-export const inject = []
+export const inject: string[] = []
 
 /**
  * Mount the desktop shell row. Currently a no-op placeholder reserved for the
  * native lifecycle plugin.
- * @param {import('@deepseek-ai/cordis').Context} ctx - plugin context.
+ * @param ctx - plugin context.
  */
-export function apply(ctx) {
+export function apply(_ctx: Context): void {
   // Reserved for the Electron native shell (window/tray/terminal/updates).
 }

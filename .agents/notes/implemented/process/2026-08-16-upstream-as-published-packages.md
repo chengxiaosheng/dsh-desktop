@@ -10,7 +10,7 @@ The repository kept `deepseek-harness/` as a pinned upstream Git submodule while
 
 ## Decision
 
-The repository consumes upstream as published npm packages only. `packages/dsh-plugin-desktop/package.json` pins every `@deepseek-ai/*` dependency at the runtime family, `pnpm-lock.yaml` fixes the exact resolutions, and [`upstream.json`](../../../../upstream.json) records the upstream provenance independently: the pinned source commit, the runtime package family, and `sourcePath` — the upstream file the pinned `ConnectionController` copy in `dsh-plugin-desktop-connection` is re-applied from. The submodule gitlink, `.gitmodules`, and the submodule working tree were removed. An upstream update is a dedicated change that bumps the runtime family in `package.json` and the pinned commit in `upstream.json`.
+The repository consumes upstream as published npm packages only. Every `@deepseek-ai/*` dependency resolves from the dist-tags recorded in [`upstream.json`](../../../../upstream.json) at install time (`next` for the dsh family, `latest` for the cordis framework; no committed lockfile — see [Upstream resolved from dist-tags](2026-08-17-upstream-dist-tag-floating.md)), and `upstream.json` records the upstream provenance independently: the pinned source commit, the runtime package family, and `sourcePath` — the upstream file the pinned `ConnectionController` copy in `dsh-plugin-desktop-connection` is re-applied from. The submodule gitlink, `.gitmodules`, and the submodule working tree were removed.
 
 ## Alternatives considered
 

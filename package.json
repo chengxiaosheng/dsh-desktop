@@ -10,7 +10,12 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "start": "pnpm --filter dsh-plugin-desktop-connection build && pnpm --filter dsh-plugin-desktop start",
-    "test": "pnpm --filter dsh-plugin-desktop test"
+    "start": "pnpm -r build && pnpm --filter dsh-plugin-desktop start",
+    "test": "pnpm --filter dsh-plugin-desktop test",
+    "check": "pnpm -r check",
+    "package:dir": "pnpm --filter dsh-plugin-desktop package:dir",
+    "dist:mac": "pnpm --filter dsh-plugin-desktop dist:mac",
+    "dist:win": "pnpm --filter dsh-plugin-desktop dist:win",
+    "dist:linux": "pnpm --filter dsh-plugin-desktop dist:linux"
   }
 }

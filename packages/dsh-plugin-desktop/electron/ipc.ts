@@ -1,0 +1,186 @@
+/**
+ * The renderer↔host IPC bridge.
+ *
+ * Installs the three channel groups the preload exposes, once per
+ * application: the synchronous boot manifest (`sendSync`, read by the
+ * preload before page scripts run), the unary/respond `dsh:invoke` channel
+ * (RPC envelopes dispatched in-process against the composed `/api` surface,
+ * plus raw virtual-host `http-request` download dispatch), and the two
+ * downlink stream pumps (`mux`/`host`) pushing host frames to the renderer.
+ * The renderer handle is resolved per send, so reloads and window
+ * recreation keep working without reinstalling handlers.
+ */
+
+import { ipcMain, type WebContents } from 'electron'
+import { randomUUID } from 'node:crypto'
+import { toFetchHandler, type ApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api'
+import { API_PATH } from '@deepseek-ai/dsh-client-connection'
+import type { Context } from '@deepseek-ai/cordis'
+import { composeDesktopManifest, dispatchHttpRequest, type DesktopHostConnection, type FetchHandler, type HttpRequestMessage } from './boot-desktop.js'
+
+/** One client->host RPC envelope the renderer carrier sends over the bridge. */
+interface ClientRequest {
+  type: 'client-request'
+  rpcId: string
+  method: string
+  payload: unknown
+}
+
+/** One host->client response envelope traveling back over the bridge. */
+interface ClientResponse {
+  type: 'client-response'
+  rpcId: string
+  result: unknown
+}
+
+/** The RPC body envelopes the renderer carrier sends over the bridge. */
+type ClientRequestBody = ClientRequest | ClientResponse
+
+/** One bridge invoke: a raw virtual-host request, or an RPC envelope. */
+type InvokeRequest = HttpRequestMessage | { type?: never; path: string; body?: unknown }
+
+/** A `server-response` envelope carrying an error for a malformed invoke. */
+interface ErrorResponse {
+  type: 'server-response'
+  rpcId: string
+  result: { ok: false; error: { code: string; message: string; details: object } }
+}
+
+/**
+ * Install the IPC bridge against the booted host context.
+ * @param ctx - the booted desktop context.
+ * @param getWebContents - renderer resolution for downlink pushes, invoked
+ *   per send so a reload or window recreation keeps receiving frames.
+ * @throws when the booted tree provides no `connection` service.
+ */
+export function installIpc(ctx: Context, getWebContents: () => WebContents | undefined): void {
+  const connection = ctx.get('connection') as DesktopHostConnection | undefined
+  if (connection === undefined) {
+    throw new Error('dsh-desktop: connection service missing from the booted tree')
+  }
+  installBootManifestChannel(ctx)
+  installInvokeChannel(ctx, connection)
+  installStreamPumps(ctx, getWebContents)
+}
+
+/** sendSync channel: the preload reads the rewritten boot graph synchronously before page scripts run. */
+function installBootManifestChannel(ctx: Context): void {
+  const { graph } = composeDesktopManifest(ctx)
+  ipcMain.on('dsh:boot-manifest', (event) => {
+    event.returnValue = graph
+  })
+}
+
+/**
+ * The unary/respond channel. Raw virtual-host HTTP requests (the
+ * session-log download surface) dispatch through the in-process host; RPC
+ * envelopes route either through the composed `/api` fetch surface or, for
+ * generic connection channels, through the gateway's claimed set.
+ */
+function installInvokeChannel(ctx: Context, connection: DesktopHostConnection): void {
+  const apiProxy = ctx.get('apiProxy')
+  const apiFetchHandler = connection.createSharedFetchHandler(API_PATH, {
+    fetch: (request) => {
+      if (apiProxy === undefined) return Promise.resolve(new Response('not found', { status: 404 }))
+      return toFetchHandler(apiProxy).fetch(request)
+    },
+  })
+  ipcMain.handle('dsh:invoke', async (_event, request: InvokeRequest): Promise<unknown> => {
+    if (request?.type === 'http-request') {
+      return dispatchHttpRequest(ctx, request)
+    }
+    const body = request?.body
+    if (typeof body !== 'object' || body === null) return errorResult('missing body')
+    const rpcBody = body as ClientRequestBody
+    if (rpcBody.type === 'client-request') {
+      const path = typeof request.path === 'string' ? request.path : ''
+      if (path.startsWith(`${API_PATH}/`)) {
+        return dispatchApiRpc(apiFetchHandler, path, rpcBody)
+      }
+      // Generic connection channels: the gateway's claimed set, else not-found.
+      const result = await connection.dispatch(rpcBody.method, rpcBody.payload, new AbortController().signal)
+      return { type: 'server-response', rpcId: rpcBody.rpcId, result }
+    }
+    if (rpcBody.type === 'client-response' && apiProxy !== undefined) {
+      return apiProxy.respond(rpcBody as Parameters<ApiProxy['respond']>[0])
+    }
+    return errorResult('unsupported message type')
+  })
+}
+
+/** One `/api` RPC envelope through the composed fetch surface, mapped to a response envelope. */
+async function dispatchApiRpc(apiFetchHandler: FetchHandler, path: string, rpcBody: ClientRequest): Promise<unknown> {
+  const fetchRequest = new Request(new URL(path, 'http://dsh-desktop.invalid'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(rpcBody),
+  })
+  const response = await apiFetchHandler.fetch(fetchRequest)
+  if (!response.ok) {
+    return {
+      type: 'server-response',
+      rpcId: rpcBody.rpcId,
+      result: { ok: false, error: { code: 'internal', message: `dsh-desktop: transport error HTTP ${response.status}`, details: {} } },
+    }
+  }
+  return response.json()
+}
+
+/**
+ * The downlink stream channels: one pump per channel (`mux`, `host`)
+ * forwarding `apiProxy.events` frames to the renderer until unsubscribed.
+ */
+function installStreamPumps(ctx: Context, getWebContents: () => WebContents | undefined): void {
+  const apiProxy = ctx.get('apiProxy') as ApiProxy | undefined
+  const DOWNLINK_CHANNELS = new Set(['mux', 'host'] as const)
+  const pumps = new Map<string, AbortController>()
+  ipcMain.on('dsh:subscribe', (_event, channel: unknown) => {
+    if (typeof channel !== 'string' || !DOWNLINK_CHANNELS.has(channel as 'mux' | 'host')) return
+    if (pumps.has(channel) || apiProxy === undefined) return
+    const abort = new AbortController()
+    pumps.set(channel, abort)
+    startPump(apiProxy, channel as 'mux' | 'host', abort, pumps, getWebContents)
+  })
+  ipcMain.on('dsh:unsubscribe', (_event, channel: unknown) => {
+    if (typeof channel !== 'string' || !DOWNLINK_CHANNELS.has(channel as 'mux' | 'host')) return
+    pumps.get(channel)?.abort()
+    pumps.delete(channel)
+  })
+}
+
+/** Pump one downlink channel until its abort fires, then emit `stream/end`. */
+function startPump(
+  apiProxy: ApiProxy,
+  channel: 'mux' | 'host',
+  abort: AbortController,
+  pumps: Map<string, AbortController>,
+  getWebContents: () => WebContents | undefined,
+): void {
+  const frames = channel === 'mux'
+    ? apiProxy.events.mux({ rpcId: RpcId(randomUUID()), payload: {} }, abort.signal)
+    : apiProxy.events.host({ rpcId: RpcId(randomUUID()), payload: {} }, abort.signal)
+  void (async () => {
+    try {
+      for await (const frame of frames) {
+        getWebContents()?.send('dsh:frame', channel, {
+          type: 'server-request',
+          rpcId: frame.rpcId,
+          method: frame.payload.type,
+          payload: frame.payload,
+        })
+      }
+    } finally {
+      getWebContents()?.send('dsh:frame', channel, { type: 'stream/end' })
+      pumps.delete(channel)
+    }
+  })()
+}
+
+function errorResult(message: string): ErrorResponse {
+  return {
+    type: 'server-response',
+    rpcId: 'invalid-request',
+    result: { ok: false, error: { code: 'bad-request', message, details: {} } },
+  }
+}

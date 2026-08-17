@@ -8,9 +8,10 @@
  * around the returned context.
  */
 
-import { writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
 import {
   boot,
   composeEntries,
@@ -19,14 +20,39 @@ import {
   loadOverlayPatches,
   loadProfile,
   PROFILE_TEMPLATES,
+  type Profile,
 } from '@deepseek-ai/dsh-app-boot'
+import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { API_PATH } from '@deepseek-ai/dsh-client-connection'
 import { toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
+import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { createRequire } from 'node:module'
+import type { Context } from '@deepseek-ai/cordis'
+import type { WebBootGraph } from '@deepseek-ai/dsh-client-modules'
 
-const PKG_ROOT = fileURLToPath(new URL('../', import.meta.url))
+// The module lives at different depths per layout — electron/ in the source
+// tree and the packaged host, lib/electron/ in the compiled workspace runtime —
+// so the package root is the nearest ancestor carrying package.json, never a
+// fixed relative hop.
+/**
+ * The package root this module runs from: the nearest ancestor directory
+ * carrying `package.json` - `electron/` in the source tree, `lib/electron/`
+ * in the compiled workspace runtime, `resources/host/electron/` in the
+ * packaged app.
+ * @returns absolute package-root directory.
+ * @throws when no `package.json` exists above this module.
+ */
+export function resolvePackageRoot(): string {
+  let dir = dirname(fileURLToPath(import.meta.url))
+  for (;;) {
+    if (existsSync(join(dir, 'package.json'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) throw new Error(`dsh-desktop: no package.json above ${import.meta.url}`)
+    dir = parent
+  }
+}
+const PKG_ROOT = resolvePackageRoot()
 const INSTALL_ANCHOR = join(PKG_ROOT, 'package.json')
 const DESKTOP_PATCH = join(PKG_ROOT, 'cordis.patch.yml')
 
@@ -60,18 +86,18 @@ const SHIPPED_PRESET_ROOT = (() => {
  *   `@deepseek-ai/dsh` package's own `config/agent-presets` tree.
  * @returns the patch stack, in application order.
  */
-export function composeDesktopPatches(profile, desktopPatches, shippedPresetRoot = SHIPPED_PRESET_ROOT) {
+export function composeDesktopPatches(profile: Profile, desktopPatches: PatchOptions[], shippedPresetRoot = SHIPPED_PRESET_ROOT): PatchOptions[] {
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
   const patches = [...bundlePatches, ...desktopPatches, ...profile.patches]
-  const rows = new Map()
+  const rows = new Map<string, PatchOptions>()
   for (const row of composeEntries([bundlePatches, desktopPatches, profile.patches])) {
-    if (typeof row.id === 'string') rows.set(row.id, row)
+    if (typeof row.id === 'string') rows.set(row.id, row as PatchOptions)
   }
   if (rows.has('agent-presets')) {
     patches.push({
       id: 'agent-presets',
       config: {
-        ...(rows.get('agent-presets')?.config ?? {}),
+        ...(rows.get('agent-presets')?.config as object | undefined),
         roots: [{ path: shippedPresetRoot, trust: 'system' }],
       },
     })
@@ -84,7 +110,7 @@ export function composeDesktopPatches(profile, desktopPatches, shippedPresetRoot
  * @param home - the Harness home; defaults to the resolved home.
  * @returns the booted context with the desktop rows mounted.
  */
-export async function bootDesktop(home = resolveDshHome()) {
+export async function bootDesktop(home = resolveDshHome()): Promise<Context> {
   const profileDir = join(home, 'profiles', DESKTOP_PROFILE_NAME)
   initProfile(profileDir, PROFILE_TEMPLATES.web)
   healProfilesModuleFallback(INSTALL_ANCHOR, home)
@@ -115,7 +141,7 @@ export async function bootDesktop(home = resolveDshHome()) {
  * @param ctx - the booted desktop context.
  * @returns the rewritten graph and the absolute dist index path.
  */
-export function composeDesktopManifest(ctx) {
+export function composeDesktopManifest(ctx: Context): { graph: WebBootGraph; distIndex: string } {
   const modules = ctx.get('clientModules')
   if (modules === undefined) throw new Error('dsh-desktop: clientModules missing from the booted tree')
   const graph = modules.graph()
@@ -134,11 +160,44 @@ export function composeDesktopManifest(ctx) {
 }
 
 /** Resolve the published SPA dist index.html through the frontend package exports. */
-function resolveDistIndex() {
+function resolveDistIndex(): string {
   const require = createRequire(import.meta.url)
   const entry = require.resolve('@deepseek-ai/dsh-web-frontend/package.json')
   const dist = join(dirname(entry), 'dist', 'index.html')
   return dist
+}
+
+/** A fetch-shaped handler (the connection node half's `FetchHandler` shape). */
+export interface FetchHandler {
+  fetch(request: Request): Promise<Response>
+}
+
+/**
+ * The host `connection` runtime surface the desktop transport reads. The
+ * published `HostConnectionHandle` type only declares the `rpc` registry; the
+ * node half's `HostConnectionService` additionally exposes
+ * `createSharedFetchHandler`. The `dispatch` leg serves generic (non-`/api`)
+ * channels over IPC: the rc.6 runtime does not implement it, so reaching it
+ * rejects the invoke — preserved from the JS original.
+ */
+export interface DesktopHostConnection {
+  createSharedFetchHandler(channel: '/api', fallback: FetchHandler): FetchHandler
+  dispatch(method: string, payload: unknown, signal: AbortSignal): Promise<RpcResult<unknown>>
+}
+
+/** One raw virtual-host HTTP request the renderer bridge sends. */
+export interface HttpRequestMessage {
+  type: 'http-request'
+  method?: string
+  path?: string
+  search?: string
+}
+
+/** The raw host HTTP response envelope traveling back over the bridge. */
+export interface HttpResponseEnvelope {
+  status: number
+  headers: Record<string, string>
+  bodyBase64: string
 }
 
 /**
@@ -155,8 +214,8 @@ function resolveDistIndex() {
  * @param request - the bridge request message.
  * @returns the response envelope.
  */
-export async function dispatchHttpRequest(ctx, request) {
-  const connection = ctx.get('connection')
+export async function dispatchHttpRequest(ctx: Context, request: HttpRequestMessage): Promise<HttpResponseEnvelope> {
+  const connection = ctx.get('connection') as DesktopHostConnection | undefined
   const apiProxy = ctx.get('apiProxy')
   if (connection === undefined || apiProxy === undefined) {
     return { status: 503, headers: {}, bodyBase64: '' }

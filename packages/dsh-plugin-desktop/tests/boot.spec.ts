@@ -30,7 +30,8 @@ import {
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
 import { API_PATH } from '@deepseek-ai/dsh-client-connection'
-import { composeDesktopPatches } from '../electron/boot-desktop.js'
+import type { Context } from '@deepseek-ai/cordis'
+import { composeDesktopPatches, type DesktopHostConnection } from '../electron/boot-desktop.ts'
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const PKG_ROOT = fileURLToPath(new URL('../', import.meta.url))
@@ -44,7 +45,7 @@ const DESKTOP_CONNECTION = 'dsh-plugin-desktop-connection'
 process.env.DSH_HOME = HOME
 rmSync(HOME, { recursive: true, force: true })
 
-let ctx
+let ctx: Context | undefined
 
 test('virtual webserver interceptor + desktop connection: connection/modules mount and /api dispatches in-process', async () => {
   const profileDir = join(HOME, 'profiles', PROFILE_NAME)
@@ -80,14 +81,17 @@ test('virtual webserver interceptor + desktop connection: connection/modules mou
 
   // 2. The connection node half mounted against it — the desktop replacement
   //    (`dsh-plugin-desktop-connection`) re-exporting the official apply.
-  const connection = ctx.get('connection')
+  //    The published `HostConnectionHandle` type omits `createSharedFetchHandler`,
+  //    so the test reads the service through the desktop transport surface.
+  const connection = ctx.get('connection') as DesktopHostConnection | undefined
   assert.ok(connection !== undefined, 'connection (HostConnectionService) present')
   assert.equal(typeof connection.createSharedFetchHandler, 'function', 'shared /api seam available')
   assert.ok(webServer.prefixes.has(API_PATH), '/api prefix route registered by connection')
   assert.ok(webServer.upgrades.size >= 2, 'two downlink upgrade routes registered by connection')
 
   // 2b. The connection loader entry is the desktop package, not the official one.
-  const connectionEntry = [...ctx.loader.entries()].find((entry) => entry.options.name === DESKTOP_CONNECTION)
+  const loader = ctx.loader as unknown as { entries(): IterableIterator<{ options: { name: string } }> }
+  const connectionEntry = [...loader.entries()].find((entry) => entry.options.name === DESKTOP_CONNECTION)
   assert.ok(connectionEntry !== undefined, 'connection row present')
   assert.equal(connectionEntry.options.name, DESKTOP_CONNECTION, 'connection row replaced by the desktop package')
 
@@ -109,7 +113,7 @@ test('virtual webserver interceptor + desktop connection: connection/modules mou
   const agentPresets = ctx.get('agentPresets')
   assert.ok(agentPresets !== undefined, 'agentPresets service present')
   assert.ok(
-    agentPresets.resolvedRoots.some(root => root.trust === 'system'),
+    (agentPresets as unknown as { resolvedRoots: Array<{ trust: string }> }).resolvedRoots.some(root => root.trust === 'system'),
     'a system-trust preset root is configured',
   )
   const roster = await agentPresets.list()
@@ -135,7 +139,7 @@ test('virtual webserver interceptor + desktop connection: connection/modules mou
     }),
   }))
   assert.equal(response.status, 200, 'in-process /api response status')
-  const envelope = await response.json()
+  const envelope = await response.json() as { type: string; rpcId: string; result: { ok: boolean } }
   assert.equal(envelope.type, 'server-response', 'server-response envelope')
   assert.equal(envelope.rpcId, 'desktop-smoke-1', 'rpcId echoed')
   assert.ok(envelope.result.ok, 'host.describe succeeded in-process')

@@ -6,7 +6,7 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./src/index.js",
+    ".": "./dist/src/index.js",
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
@@ -18,27 +18,30 @@
     }
   },
   "files": [
-    "lib/**/*.js",
-    "src/**/*.js",
+    "lib/**",
+    "dist/**",
     "README.md"
   ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "build": "node scripts/build-client.mjs",
-    "test": "node --test tests/*.spec.js",
-    "check": "pnpm run build && pnpm run test"
+    "build": "node scripts/verify-upstream.mts && tsc -p tsconfig.build.json && node scripts/build-client.mts",
+    "verify:upstream": "node scripts/verify-upstream.mts",
+    "test": "node --test tests/*.spec.ts",
+    "check": "pnpm run build && tsc -p tsconfig.json && pnpm run test"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-client-connection": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-host-apiproxy": "0.1.0-rc.6"
+    "@deepseek-ai/dsh-client-connection": "next",
+    "@deepseek-ai/dsh-host-apiproxy": "next"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.1"
+    "@deepseek-ai/cordis": "^4.0.1"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.1",
-    "esbuild": "^0.25.0"
+    "@deepseek-ai/cordis": "latest",
+    "@types/node": "^24.13.3",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.2"
   }
 }

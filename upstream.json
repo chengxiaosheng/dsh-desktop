@@ -1,7 +1,8 @@
 {
   "name": "deepseek-harness",
   "repository": "https://github.com/deepseek-ai/deepseek-harness",
-  "commit": "47f943859bef60e4160492346772ded9b24f765a",
+  "tag": "next",
   "version": "0.1.0-rc.6",
+  "commit": "47f943859bef60e4160492346772ded9b24f765a",
   "sourcePath": "packages/client/connection/src/client/connection.ts"
 }

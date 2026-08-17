@@ -7,17 +7,19 @@
  * unchanged.
  */
 
-import { IpcApiClient, createDesktopConnectionRpc } from './ipc-api-client.js'
-import { ConnectionController } from './controller.js'
-import { patchAnchorClick, patchDownloadClicks, patchFetch } from './host-http.js'
+import { IpcApiClient, createDesktopConnectionRpc, type DshDesktopBridge } from './ipc-api-client.ts'
+import { ConnectionController, type ConnectionConfig, type HostDescription } from './controller.ts'
+import { patchAnchorClick, patchDownloadClicks, patchFetch } from './host-http.ts'
+import type { Context } from '@deepseek-ai/cordis'
+import type { ConnectionHandle, ConnectionSinks } from '@deepseek-ai/dsh-client-connection/client'
 
 /** Required services (none — this is the wire root). */
-export const inject = []
+export const inject: string[] = []
 
 /**
- * @param {import('@deepseek-ai/cordis').Context} ctx - client cordis context.
+ * @param ctx - client cordis context.
  */
-export function apply(ctx) {
+export function apply(ctx: Context): void {
   const bridge = globalThis.dshDesktop
   if (bridge === undefined) {
     throw new Error('dsh-plugin-desktop-connection: window.dshDesktop is missing from a desktop composition')
@@ -25,9 +27,9 @@ export function apply(ctx) {
   const api = new IpcApiClient(bridge)
   const rpc = createDesktopConnectionRpc(bridge)
   let started = false
-  let description = undefined
-  const descriptionListeners = new Set()
-  const publishDescription = (next) => {
+  let description: HostDescription | undefined
+  const descriptionListeners = new Set<() => void>()
+  const publishDescription = (next: HostDescription | undefined): void => {
     if (Object.is(description, next)) return
     description = next
     for (const listener of [...descriptionListeners]) {
@@ -38,7 +40,7 @@ export function apply(ctx) {
       }
     }
   }
-  const handle = {
+  const handle: ConnectionHandle = {
     api,
     // The desktop caller is the process itself — trusted by construction.
     isLoopback: true,
@@ -50,7 +52,7 @@ export function apply(ctx) {
       },
     },
     rpc,
-    start(sinks, config) {
+    start(sinks: ConnectionSinks, config?: ConnectionConfig) {
       if (started) throw new Error('connection: the stream loop is already owned by another consumer')
       started = true
       const controller = new ConnectionController(api, {
