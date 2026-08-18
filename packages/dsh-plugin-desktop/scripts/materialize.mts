@@ -65,6 +65,11 @@ function packageDirFromAnchor(anchorPath: string, packageName: string): string |
 
 const closure = new Map<string, string>() // package name → resolved dir
 closure.set(appManifest.name, pkgRoot) // the desktop row package itself
+// @pnpm/<platform> ships the standalone pnpm binary that @pnpm/exe's install
+// setup hard-links into its own `pnpm` file. The linked copy is what the
+// desktop runs at runtime, so the platform packages are install-time-only and
+// are excluded to avoid shipping a second ~150MB binary per platform.
+const PNPM_PLATFORM_PKG = /^@pnpm\/(?:linux|linuxstatic|win|macos)-(?:x64|arm64)$/
 const queue: Array<{ anchor: string; manifest: ClosureManifest }> = [{ anchor: appAnchor, manifest: appManifest }]
 for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
   const manifest = next.manifest
@@ -75,7 +80,7 @@ for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
     // optional dependencies; the closure needs the current platform's copy.
     ...Object.keys(manifest.optionalDependencies ?? {}),
   ]) {
-    if (closure.has(dep)) continue
+    if (closure.has(dep) || PNPM_PLATFORM_PKG.test(dep)) continue
     const dir = packageDirFromAnchor(next.anchor, dep)
     if (dir === undefined) continue
     closure.set(dep, dir)

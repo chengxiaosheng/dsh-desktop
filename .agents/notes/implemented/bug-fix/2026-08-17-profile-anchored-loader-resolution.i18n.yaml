@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   git hash-object <file>
-2026-08-16-virtual-webserver-interceptor.md: 9497288c6c7c3dbcab49687e5d39537d73413a0f
-2026-08-16-virtual-webserver-interceptor.zh.md: d5402640f82460f268134f40b9ae9b4b9975da00
+2026-08-17-profile-anchored-loader-resolution.md: 685ff0a34192fb4e3506c586881b480d05933ec3
+2026-08-17-profile-anchored-loader-resolution.zh.md: 66c5cae1f8fe7cf38ae6e4ef26f938840de571d1

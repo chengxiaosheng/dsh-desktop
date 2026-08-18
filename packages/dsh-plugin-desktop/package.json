@@ -221,7 +221,9 @@
     "@deepseek-ai/dsh-workflow-worker-thread": "next",
     "@deepseek-ai/dsh-workspace": "next",
     "@deepseek-ai/schemastery": "latest",
+    "@pnpm/exe": "^11.22.0",
     "dsh-plugin-desktop-connection": "workspace:*",
+    "dshmarket": "^1.11.0",
     "node-addon-require-builtin": "^0.1.4",
     "yaml": "^2.9.0"
   },

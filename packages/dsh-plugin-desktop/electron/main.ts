@@ -16,7 +16,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { bootDesktop } from './boot-desktop.js'
 import { installRendererDiagnostics } from './diagnostics.js'
 import { formatBootError } from './errors.js'
-import { installIpc } from './ipc.js'
+import { installIpc, installRebootChannel } from './ipc.js'
 import { installApplicationMenu } from './menu.js'
 import { installTray, installTrayLocaleChannel } from './tray.js'
 import { createMainWindow } from './window.js'
@@ -32,6 +32,8 @@ let opening: Promise<void> | undefined
 let isDisposing = false
 /** Set once a real quit begins, so the close-to-tray interception lets the window go. */
 let isQuitting = false
+/** Disposer for the current host generation's IPC handlers; re-installed on reboot. */
+let disposeIpc: (() => void) | undefined
 
 if (!app.requestSingleInstanceLock()) {
   // A running instance owns this profile home; quit without touching it.
@@ -64,13 +66,44 @@ if (!app.requestSingleInstanceLock()) {
 /** Boot the host once, install the per-application surfaces, then open the window. */
 async function bootShell(): Promise<void> {
   ctx = await bootDesktop()
-  installIpc(ctx, () => win?.webContents)
+  disposeIpc = installIpc(ctx, () => win?.webContents)
+  installRebootChannel(() => rebootHost())
   // The tray-label channel must precede the window: the renderer publishes
   // its locale copy during boot, and the first send must not be lost.
   installTrayLocaleChannel()
   installApplicationMenu()
   await ensureMainWindow()
-  tray = installTray(() => win)
+  tray = installTray(() => win, () => rebootHost())
+}
+
+/**
+ * Reboot the host in-process: dispose the current Cordis generation, boot a
+ * fresh one over the updated profile (new plugin bundles compose on the next
+ * boot), re-install the IPC bridge, and reload the renderer. The Electron
+ * process, window, and tray stay up — pending plugin changes apply without
+ * restarting the application. The shell owns this restart (the plugin market's
+ * own restart route is disabled in Desktop mode).
+ */
+async function rebootHost(): Promise<void> {
+  if (isQuitting || isDisposing) return
+  const previous = ctx
+  if (previous === undefined) return
+  ctx = undefined
+  try {
+    await previous.fiber.dispose()
+  } catch (error) {
+    console.error('dsh-desktop: host dispose failed during reboot:', error)
+  }
+  disposeIpc?.()
+  disposeIpc = undefined
+  try {
+    ctx = await bootDesktop()
+  } catch (error) {
+    void fatal(error)
+    return
+  }
+  disposeIpc = installIpc(ctx, () => win?.webContents)
+  win?.webContents.reload()
 }
 
 /** Open the main window unless one exists or an open is already in flight. */

@@ -8,6 +8,7 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { CloseBehaviorPolicy, type CloseBehaviorBridge } from './close-behavior-policy.ts'
 import { CloseToTrayRow } from './CloseToTrayRow.tsx'
+import { RestartHostRow } from './RestartHostRow.tsx'
 import { en, zh } from './locales.ts'
 
 // Type-only references pull the cordis Context augmentations for the
@@ -19,7 +20,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 /** The desktop bridge surface the shell half consumes (exposed by the preload). */
 export interface DesktopBridge extends CloseBehaviorBridge {
   /** Publish the tray menu labels for the active locale to the main process. */
-  sendLocale(labels: { show: string; quit: string }): void
+  sendLocale(labels: { show: string; restart: string; quit: string }): void
+  /** Ask the main process to reboot the host in-process (apply pending plugin changes). */
+  rebootHost(): Promise<void>
 }
 
 /** Required services: slot registration and the locale registry. */
@@ -59,6 +62,19 @@ export function apply(ctx: ClientContext): void {
     }),
   }, CloseToTrayRow))
 
+  // Restart-host row: apply pending plugin changes (the market shows a
+  // "needs restart" banner when a change cannot hot-load) by re-booting the
+  // host in-process, never restarting the application.
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'desktop-restart-host',
+    order: 40,
+    locale: SETTINGS_NS,
+    inject: () => ({
+      restartHost: () => bridge.rebootHost(),
+    }),
+  }, RestartHostRow))
+
   // The tray menu lives in the main process; publish its labels whenever the
   // active locale changes (and once at boot), so the tray always matches the
   // language the renderer actually displays.
@@ -66,6 +82,7 @@ export function apply(ctx: ClientContext): void {
   const publishTrayLabels = (): void => {
     bridge.sendLocale({
       show: t('settings.desktop.tray.show'),
+      restart: t('settings.desktop.tray.restart'),
       quit: t('settings.desktop.tray.quit'),
     })
   }

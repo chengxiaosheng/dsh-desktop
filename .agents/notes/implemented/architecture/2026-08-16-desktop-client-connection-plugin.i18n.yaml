@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   git hash-object <file>
-2026-08-16-desktop-client-connection-plugin.md: 065d0f4dd0e6ef5983b5d1f8e2f864f2bc5fad67
-2026-08-16-desktop-client-connection-plugin.zh.md: 9163f363567e7dc87bfd43d14c07fb575bc68013
+2026-08-16-desktop-client-connection-plugin.md: 32a2ab4801c1c54dfa872e054cb34e5d157af71f
+2026-08-16-desktop-client-connection-plugin.zh.md: b22687f38bceacddc0703a76c850fa7309de17b8

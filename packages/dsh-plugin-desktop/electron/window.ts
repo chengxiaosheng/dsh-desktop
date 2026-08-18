@@ -11,7 +11,7 @@ import { BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import { resolvePackageRoot } from './boot-desktop.js'
+import { resolvePackageRoot } from './package-root.js'
 import { stageDesktopPage } from './page.js'
 
 const PRELOAD_PATH = fileURLToPath(new URL('./preload.cjs', import.meta.url))

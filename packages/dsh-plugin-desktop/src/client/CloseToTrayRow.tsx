@@ -10,7 +10,7 @@ import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primi
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CloseBehaviorState } from './close-behavior-policy.ts'
-import styles from './CloseToTrayRow.module.css'
+import styles from './settings-row.module.css'
 
 /** The two selectable close-window behaviors, keyed by their locale entries. */
 const OPTIONS = [

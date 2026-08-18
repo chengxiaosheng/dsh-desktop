@@ -29,4 +29,5 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   getCloseBehavior: (): Promise<unknown> => ipcRenderer.invoke('dsh:close-behavior', { type: 'read' }),
   setCloseBehavior: (value: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:close-behavior', { type: 'write', value }),
   sendLocale: (labels: unknown): void => { ipcRenderer.send('dsh:locale', labels) },
+  rebootHost: (): Promise<unknown> => ipcRenderer.invoke('dsh:reboot-host'),
 })

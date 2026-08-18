@@ -57,17 +57,39 @@ interface ErrorResponse {
  * @param ctx - the booted desktop context.
  * @param getWebContents - renderer resolution for downlink pushes, invoked
  *   per send so a reload or window recreation keeps receiving frames.
+ * @returns a disposer removing every registered handler, so the bridge can be
+ *   re-installed against a fresh context after an in-process host re-boot.
  * @throws when the booted tree provides no `connection` service.
  */
-export function installIpc(ctx: Context, getWebContents: () => WebContents | undefined): void {
+export function installIpc(ctx: Context, getWebContents: () => WebContents | undefined): () => void {
   const connection = ctx.get('connection') as DesktopHostConnection | undefined
   if (connection === undefined) {
     throw new Error('dsh-desktop: connection service missing from the booted tree')
   }
-  installBootManifestChannel(ctx)
-  installInvokeChannel(ctx, connection)
-  installStreamPumps(ctx, getWebContents)
-  installCloseBehaviorChannel(ctx)
+  const disposers = [
+    installBootManifestChannel(ctx),
+    installInvokeChannel(ctx, connection),
+    installStreamPumps(ctx, getWebContents),
+    installCloseBehaviorChannel(ctx),
+  ]
+  return () => {
+    for (const dispose of disposers) dispose()
+  }
+}
+
+/**
+ * Install the `dsh:reboot-host` channel: the shell client asks the main to
+ * dispose the host generation, boot a fresh one over the updated profile, and
+ * reload the renderer — applying pending plugin changes without restarting the
+ * application. App-level, not context-scoped: installed once alongside the
+ * tray and menu.
+ * @param onReboot - the main's reboot routine.
+ * @returns a disposer removing the handler.
+ */
+export function installRebootChannel(onReboot: () => void | Promise<void>): () => void {
+  const handler = (): unknown => onReboot()
+  ipcMain.handle('dsh:reboot-host', handler)
+  return () => { ipcMain.removeHandler('dsh:reboot-host') }
 }
 
 /**
@@ -77,8 +99,8 @@ export function installIpc(ctx: Context, getWebContents: () => WebContents | und
  * allowlist covers the shipped web preferences only — so the write goes
  * through the in-process provider, which is not gated by that allowlist.
  */
-function installCloseBehaviorChannel(ctx: Context): void {
-  ipcMain.handle('dsh:close-behavior', async (_event, request: unknown): Promise<{ closeToTray: boolean }> => {
+function installCloseBehaviorChannel(ctx: Context): () => void {
+  const handler = async (_event: Electron.IpcMainInvokeEvent, request: unknown): Promise<{ closeToTray: boolean }> => {
     if (typeof request === 'object' && request !== null) {
       const body = request as { type?: unknown; value?: unknown }
       if (body.type === 'write' && typeof body.value === 'boolean') {
@@ -91,15 +113,19 @@ function installCloseBehaviorChannel(ctx: Context): void {
       }
     }
     return readCloseBehavior(ctx)
-  })
+  }
+  ipcMain.handle('dsh:close-behavior', handler)
+  return () => { ipcMain.removeHandler('dsh:close-behavior') }
 }
 
 /** sendSync channel: the preload reads the rewritten boot graph synchronously before page scripts run. */
-function installBootManifestChannel(ctx: Context): void {
+function installBootManifestChannel(ctx: Context): () => void {
   const { graph } = composeDesktopManifest(ctx)
-  ipcMain.on('dsh:boot-manifest', (event) => {
+  const listener = (event: Electron.IpcMainEvent): void => {
     event.returnValue = graph
-  })
+  }
+  ipcMain.on('dsh:boot-manifest', listener)
+  return () => { ipcMain.removeListener('dsh:boot-manifest', listener) }
 }
 
 /**
@@ -108,7 +134,7 @@ function installBootManifestChannel(ctx: Context): void {
  * envelopes route either through the composed `/api` fetch surface or, for
  * generic connection channels, through the gateway's claimed set.
  */
-function installInvokeChannel(ctx: Context, connection: DesktopHostConnection): void {
+function installInvokeChannel(ctx: Context, connection: DesktopHostConnection): () => void {
   const apiProxy = ctx.get('apiProxy')
   const apiFetchHandler = connection.createSharedFetchHandler(API_PATH, {
     fetch: (request) => {
@@ -116,7 +142,7 @@ function installInvokeChannel(ctx: Context, connection: DesktopHostConnection): 
       return toFetchHandler(apiProxy).fetch(request)
     },
   })
-  ipcMain.handle('dsh:invoke', async (_event, request: InvokeRequest): Promise<unknown> => {
+  const handler = async (_event: Electron.IpcMainInvokeEvent, request: InvokeRequest): Promise<unknown> => {
     if (request?.type === 'http-request') {
       return dispatchHttpRequest(ctx, request)
     }
@@ -128,15 +154,43 @@ function installInvokeChannel(ctx: Context, connection: DesktopHostConnection): 
       if (path.startsWith(`${API_PATH}/`)) {
         return dispatchApiRpc(apiFetchHandler, path, rpcBody)
       }
-      // Generic connection channels: the gateway's claimed set, else not-found.
-      const result = await connection.dispatch(rpcBody.method, rpcBody.payload, new AbortController().signal)
-      return { type: 'server-response', rpcId: rpcBody.rpcId, result }
+      // Generic connection channel (e.g. a plugin's `/mineru-api/...`): the
+      // channel's webServer prefix route serves it — the official flow POSTs
+      // the envelope to the channel path, and the host's rpcFetchHandler
+      // answers with the server-response envelope. Dispatch through the full
+      // registry like any plugin route.
+      const envelope = await dispatchHttpRequest(ctx, {
+        type: 'http-request',
+        method: 'POST',
+        path,
+        search: '',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(rpcBody),
+      })
+      if (envelope.status < 200 || envelope.status >= 300) {
+        return {
+          type: 'server-response',
+          rpcId: rpcBody.rpcId,
+          result: { ok: false, error: { code: 'internal', message: `dsh-desktop: channel answered HTTP ${envelope.status}`, details: {} } },
+        }
+      }
+      try {
+        return JSON.parse(Buffer.from(envelope.bodyBase64, 'base64').toString())
+      } catch {
+        return {
+          type: 'server-response',
+          rpcId: rpcBody.rpcId,
+          result: { ok: false, error: { code: 'internal', message: 'dsh-desktop: channel answered a non-JSON response', details: {} } },
+        }
+      }
     }
     if (rpcBody.type === 'client-response' && apiProxy !== undefined) {
       return apiProxy.respond(rpcBody as Parameters<ApiProxy['respond']>[0])
     }
     return errorResult('unsupported message type')
-  })
+  }
+  ipcMain.handle('dsh:invoke', handler)
+  return () => { ipcMain.removeHandler('dsh:invoke') }
 }
 
 /** One `/api` RPC envelope through the composed fetch surface, mapped to a response envelope. */
@@ -161,22 +215,30 @@ async function dispatchApiRpc(apiFetchHandler: FetchHandler, path: string, rpcBo
  * The downlink stream channels: one pump per channel (`mux`, `host`)
  * forwarding `apiProxy.events` frames to the renderer until unsubscribed.
  */
-function installStreamPumps(ctx: Context, getWebContents: () => WebContents | undefined): void {
+function installStreamPumps(ctx: Context, getWebContents: () => WebContents | undefined): () => void {
   const apiProxy = ctx.get('apiProxy') as ApiProxy | undefined
   const DOWNLINK_CHANNELS = new Set(['mux', 'host'] as const)
   const pumps = new Map<string, AbortController>()
-  ipcMain.on('dsh:subscribe', (_event, channel: unknown) => {
+  const onSubscribe = (_event: Electron.IpcMainEvent, channel: unknown): void => {
     if (typeof channel !== 'string' || !DOWNLINK_CHANNELS.has(channel as 'mux' | 'host')) return
     if (pumps.has(channel) || apiProxy === undefined) return
     const abort = new AbortController()
     pumps.set(channel, abort)
     startPump(apiProxy, channel as 'mux' | 'host', abort, pumps, getWebContents)
-  })
-  ipcMain.on('dsh:unsubscribe', (_event, channel: unknown) => {
+  }
+  const onUnsubscribe = (_event: Electron.IpcMainEvent, channel: unknown): void => {
     if (typeof channel !== 'string' || !DOWNLINK_CHANNELS.has(channel as 'mux' | 'host')) return
     pumps.get(channel)?.abort()
     pumps.delete(channel)
-  })
+  }
+  ipcMain.on('dsh:subscribe', onSubscribe)
+  ipcMain.on('dsh:unsubscribe', onUnsubscribe)
+  return () => {
+    for (const abort of pumps.values()) abort.abort()
+    pumps.clear()
+    ipcMain.removeListener('dsh:subscribe', onSubscribe)
+    ipcMain.removeListener('dsh:unsubscribe', onUnsubscribe)
+  }
 }
 
 /** Pump one downlink channel until its abort fires, then emit `stream/end`. */

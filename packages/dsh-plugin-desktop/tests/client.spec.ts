@@ -2,7 +2,7 @@
  * Client-half tests for the desktop shell bundle: the built `lib/client.js`
  * registers with the real `ClientModuleSystem` machinery (bootstrapped from
  * the published `dsh-client-modules` bundle, seeded with the externals the
- * bundles require), and the plugin mounts the General-settings row, the
+ * bundles require), and the plugin mounts the General-settings rows, the
  * locale dictionaries, and the tray-label feed over a fake desktop bridge.
  *
  * Runs in plain Node (no jsdom): the row component's CSS injection is guarded
@@ -25,7 +25,8 @@ interface LoaderHandoff {
 interface FakeBridge {
   getCloseBehavior: () => Promise<{ closeToTray: boolean }>
   setCloseBehavior: (value: boolean) => Promise<void>
-  sendLocale: (labels: { show: string; quit: string }) => void
+  sendLocale: (labels: { show: string; restart: string; quit: string }) => void
+  rebootHost: () => Promise<void>
 }
 
 test('locale dictionaries are complete in both languages', () => {
@@ -90,17 +91,18 @@ test('built bundle registers and the plugin mounts the settings row', async () =
   // A fake desktop bridge: the stored preference, the write log, and the
   // tray-label log the plugin publishes.
   const bridgeWrites: boolean[] = []
-  const localeLabels: Array<{ show: string; quit: string }> = []
+  const localeLabels: Array<{ show: string; restart: string; quit: string }> = []
   const bridge: FakeBridge = {
     getCloseBehavior: async () => ({ closeToTray: true }),
     setCloseBehavior: async (value) => { bridgeWrites.push(value) },
     sendLocale: (labels) => { localeLabels.push(labels) },
+    rebootHost: async () => {},
   }
   ;(globalThis as { dshDesktop?: FakeBridge }).dshDesktop = bridge
 
   // A fake client context: the two services the plugin touches.
   const localeRegistrations: Array<[string, unknown]> = []
-  let rowRegistration: unknown
+  const rowRegistrations: unknown[] = []
   const fakeCtx = {
     effect: (fn: () => unknown) => {
       const disposer = fn()
@@ -116,7 +118,7 @@ test('built bundle registers and the plugin mounts the settings row', async () =
     on: () => {},
     slots: {
       register: (options: unknown) => {
-        rowRegistration = options
+        rowRegistrations.push(options)
         return () => {}
       },
       inject: (_key: string, register: () => unknown) => {
@@ -135,11 +137,11 @@ test('built bundle registers and the plugin mounts the settings row', async () =
 
   // The tray-label feed publishes once at boot with the current locale copy.
   assert.equal(localeLabels.length, 1, 'tray labels published at boot')
-  assert.deepEqual(localeLabels[0], { show: 'settings.desktop.tray.show', quit: 'settings.desktop.tray.quit' })
+  assert.deepEqual(localeLabels[0], { show: 'settings.desktop.tray.show', restart: 'settings.desktop.tray.restart', quit: 'settings.desktop.tray.quit' })
 
-  // The General-section row is registered with the expected identity.
-  assert.ok(typeof rowRegistration === 'object' && rowRegistration !== null)
-  const row = rowRegistration as {
+  // The two General-section rows are registered with the expected identities.
+  assert.equal(rowRegistrations.length, 2, 'close-behavior + restart-host rows')
+  const row = rowRegistrations[0] as {
     name: string
     id: string
     order: number
@@ -149,10 +151,21 @@ test('built bundle registers and the plugin mounts the settings row', async () =
       setCloseToTray(value: boolean): void
     }
   }
+  const restartRow = rowRegistrations[1] as {
+    name: string
+    id: string
+    order: number
+    locale: string
+    inject: () => { restartHost(): Promise<void> }
+  }
   assert.equal(row.name, 'settings.general.item')
   assert.equal(row.id, 'desktop-close-behavior')
   assert.equal(row.order, 30)
   assert.equal(row.locale, 'settings.desktop')
+  assert.equal(restartRow.name, 'settings.general.item')
+  assert.equal(restartRow.id, 'desktop-restart-host')
+  assert.equal(restartRow.order, 40)
+  assert.equal(restartRow.locale, 'settings.desktop')
 
   // The injected face adopts the stored preference from the bridge read and
   // writes back through the bridge.
@@ -163,6 +176,9 @@ test('built bundle registers and the plugin mounts the settings row', async () =
   face.setCloseToTray(false)
   assert.equal(face.hooks.closeToTray.getSnapshot().closeToTray, false, 'live value publishes')
   assert.deepEqual(bridgeWrites, [false], 'durable write goes through the bridge')
+
+  // The restart-host row asks the main process to reboot via the bridge.
+  assert.equal(typeof restartRow.inject().restartHost, 'function', 'restartHost exposed to the row')
 })
 
 /** The public loader surface the test drives (narrowed from the bundle types). */

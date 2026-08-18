@@ -5,7 +5,12 @@ export const zh = {
   'settings.desktop.options.quit': '退出应用',
   'settings.desktop.options.tray': '最小化到托盘',
   'settings.desktop.tray.show': '打开主窗口',
+  'settings.desktop.tray.restart': '重启宿主',
   'settings.desktop.tray.quit': '退出',
+  'settings.desktop.restart.title': '重启宿主',
+  'settings.desktop.restart.description': '重新加载插件组合，让插件市场的「需要重启」变更生效，无需重启应用。',
+  'settings.desktop.restart.action': '重启宿主',
+  'settings.desktop.restart.busy': '重启中…',
 } as const
 
 /** The settings-row and tray key union. */
@@ -18,5 +23,10 @@ export const en: Record<DesktopSettingsKey, string> = {
   'settings.desktop.options.quit': 'Quit the app',
   'settings.desktop.options.tray': 'Minimize to tray',
   'settings.desktop.tray.show': 'Open DSH Desktop',
+  'settings.desktop.tray.restart': 'Restart host',
   'settings.desktop.tray.quit': 'Quit',
+  'settings.desktop.restart.title': 'Restart host',
+  'settings.desktop.restart.description': 'Re-compose the plugin tree so the plugin market\u2019s \u201cneeds restart\u201d changes take effect, without restarting the app.',
+  'settings.desktop.restart.action': 'Restart host',
+  'settings.desktop.restart.busy': 'Restarting\u2026',
 }

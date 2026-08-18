@@ -31,11 +31,13 @@ test('isVirtualHostUrl matches the dsh.internal fallback host only', () => {
   assert.equal(isVirtualHostUrl(new URL('http://example.com/x')), false)
 })
 
-test('isDesktopHostUrl also matches the file:// /api plane of the desktop page', () => {
+test('isDesktopHostUrl matches every file:// request and the virtual host', () => {
   assert.equal(isDesktopHostUrl(new URL(FILE_EXPORT_URL)), true)
   assert.equal(isDesktopHostUrl(new URL(EXPORT_URL)), true)
-  // The bridge serves only the /api plane: non-API file URLs pass through.
-  assert.equal(isDesktopHostUrl(new URL('file:///assets/app.js')), false)
+  // A socketless desktop has no other server: every same-origin file://
+  // request (a plugin's `/dsh-market/*` route calls included) is host work.
+  assert.equal(isDesktopHostUrl(new URL('file:///dsh-market/status')), true)
+  assert.equal(isDesktopHostUrl(new URL('file:///assets/app.js')), true)
   assert.equal(isDesktopHostUrl(new URL('http://example.com/api/x')), false)
 })
 
@@ -99,6 +101,36 @@ test('patchFetch GET returns the decoded host body', async () => {
     const response = await fetch(new URL(EXPORT_URL))
     const bytes = new Uint8Array(await response.arrayBuffer())
     assert.equal(new TextDecoder().decode(bytes), payload)
+  } finally {
+    restore()
+  }
+})
+
+test('patchFetch forwards method, headers, and body for a same-origin POST', async () => {
+  const requests: unknown[] = []
+  const bridge: DshDesktopBridge = {
+    invoke: async (request) => {
+      requests.push(request)
+      return { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' }, bodyBase64: btoa('{"ok":true}') }
+    },
+    subscribe: () => () => {},
+  }
+  const restore = patchFetch(bridge)
+  try {
+    const response = await fetch(new URL('file:///dsh-market/install'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"url":"https://github.com/x/y"}',
+    })
+    assert.equal(response.status, 200)
+    assert.deepEqual(requests, [{
+      type: 'http-request',
+      method: 'POST',
+      path: '/dsh-market/install',
+      search: '',
+      headers: { 'content-type': 'application/json' },
+      body: '{"url":"https://github.com/x/y"}',
+    }])
   } finally {
     restore()
   }
@@ -333,7 +365,7 @@ test('patchAnchorClick diverts a detached virtual-host anchor click to the bridg
   }
 })
 
-test('patchAnchorClick leaves foreign and non-API clicks native', async () => {
+test('patchAnchorClick leaves foreign clicks native and diverts file:// anchors', async () => {
   const { proto, restore } = captureAnchorEnvironment()
   try {
     const nativeCalls: string[] = []
@@ -346,8 +378,9 @@ test('patchAnchorClick leaves foreign and non-API clicks native', async () => {
     const remove = patchAnchorClick(bridge)
     proto.click.call({ href: 'https://example.com/x.zip', download: 'x.zip' })
     proto.click.call({ href: 'file:///assets/app.js', download: 'app.js' })
-    assert.deepEqual(invoked, [])
-    assert.equal(nativeCalls.length, 2)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(invoked, [1], 'file:// anchors divert to the bridge')
+    assert.deepEqual(nativeCalls, ['https://example.com/x.zip'], 'foreign anchors stay native')
     remove()
   } finally {
     restore()

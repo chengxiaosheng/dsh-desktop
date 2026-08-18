@@ -45,6 +45,14 @@
     - id: desktop-shell
       name: dsh-plugin-desktop
 
+    # Plugin market (dshmarket): browse/search/one-click install inside the
+    # app. Resolves from the desktop closure via the healed profile fallback
+    # (healProfilesModuleFallback symlinks every dependency of the desktop
+    # package into $DSH_HOME/profiles/node_modules). Its own bundle patch is
+    # not composed — the row is mounted here, once.
+    - id: dsh-market
+      name: dshmarket
+
 # A desktop launch has no terminal operator waiting for the Web readiness line.
 - id: web-runtime
   config:

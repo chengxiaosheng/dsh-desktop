@@ -1,19 +1,20 @@
 /**
- * The system tray: one always-visible seat to restore the hidden main window
- * and to quit the application. The tray exists on every platform regardless
- * of the close-window preference — a hidden window must always have a
- * restore path, so the tray cannot be conditional on the setting that hides
- * it.
+ * The system tray: one always-visible seat to restore the hidden main window,
+ * re-boot the host in-process, and quit the application. The tray exists on
+ * every platform regardless of the close-window preference — a hidden window
+ * must always have a restore path, so the tray cannot be conditional on the
+ * setting that hides it.
  *
  * Menu labels come from the renderer: the shell client half publishes the
- * localized show/quit copy (the `settings.desktop` locale dictionaries)
- * whenever the active locale changes, and the main process applies it to the
- * tray. Until the first publication arrives, English labels stand.
+ * localized show/restart/quit copy (the `settings.desktop` locale
+ * dictionaries) whenever the active locale changes, and the main process
+ * applies it to the tray. Until the first publication arrives, English labels
+ * stand.
  */
 
 import { Menu, Tray, app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import { resolvePackageRoot } from './boot-desktop.js'
+import { resolvePackageRoot } from './package-root.js'
 
 /** Tooltip text; the application identity is not localized. */
 const TOOLTIP = 'DSH Desktop'
@@ -21,10 +22,11 @@ const TOOLTIP = 'DSH Desktop'
 /** The tray menu labels the renderer publishes (fallback while absent). */
 export interface TrayLabels {
   show: string
+  restart: string
   quit: string
 }
 
-const FALLBACK_TRAY_LABELS: TrayLabels = { show: 'Open DSH Desktop', quit: 'Quit' }
+const FALLBACK_TRAY_LABELS: TrayLabels = { show: 'Open DSH Desktop', restart: 'Restart host', quit: 'Quit' }
 
 /** The latest labels the renderer published; undefined before the first send. */
 let trayLabelsState: TrayLabels | undefined
@@ -36,9 +38,9 @@ let trayLabelsState: TrayLabels | undefined
  */
 export function installTrayLocaleChannel(): void {
   ipcMain.on('dsh:locale', (_event, labels: unknown) => {
-    const candidate = labels as { show?: unknown; quit?: unknown } | undefined
-    if (typeof candidate?.show === 'string' && typeof candidate?.quit === 'string') {
-      trayLabelsState = { show: candidate.show, quit: candidate.quit }
+    const candidate = labels as { show?: unknown; restart?: unknown; quit?: unknown } | undefined
+    if (typeof candidate?.show === 'string' && typeof candidate?.restart === 'string' && typeof candidate?.quit === 'string') {
+      trayLabelsState = { show: candidate.show, restart: candidate.restart, quit: candidate.quit }
     }
   })
 }
@@ -55,9 +57,10 @@ export function currentTrayLabels(): TrayLabels {
  * resolved per interaction, so recreation and reloads keep working. The menu
  * is rebuilt at every open so a locale change applies without a restart.
  * @param getWindow - resolution of the current main window, per interaction.
+ * @param onRestart - the in-process host reboot routine the tray triggers.
  * @returns the tray instance; destroy it on quit.
  */
-export function installTray(getWindow: () => BrowserWindow | undefined): Tray {
+export function installTray(getWindow: () => BrowserWindow | undefined, onRestart: () => void | Promise<void>): Tray {
   const tray = new Tray(join(resolvePackageRoot(), 'build', 'icon.png'))
   tray.setToolTip(TOOLTIP)
   const show = (): void => {
@@ -67,10 +70,13 @@ export function installTray(getWindow: () => BrowserWindow | undefined): Tray {
     if (win.isMinimized()) win.restore()
     win.focus()
   }
+  const restart = (): void => { void onRestart() }
   const refreshMenu = (): void => {
     const labels = currentTrayLabels()
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: labels.show, click: show },
+      { type: 'separator' },
+      { label: labels.restart, click: restart },
       { type: 'separator' },
       { label: labels.quit, click: () => app.quit() },
     ]))

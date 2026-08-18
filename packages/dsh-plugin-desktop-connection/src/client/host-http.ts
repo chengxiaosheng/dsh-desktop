@@ -9,10 +9,13 @@
  * requests build `file:///api/...` URLs. Neither host has an HTTP server in the
  * zero-socket desktop: a native `fetch` to either rejects with "Failed to
  * fetch" and an anchor download to them would navigate the SPA away. This module
- * routes every such request over the preload IPC bridge instead, serving the
- * download surface (`/api/session.export`) in-process: `patchFetch` answers the
- * controller's native HEAD probe, and `patchDownloadClicks` converts the
- * follow-up anchor download into a GET over the bridge saved through a Blob URL.
+ * routes every such request over the preload IPC bridge instead: `patchFetch`
+ * forwards the full request (method, headers, body) to the main, which
+ * dispatches it against the webserver route registry in-process — the
+ * session-log download surface (`/api/session.export`) and every plugin's
+ * routes (`/dsh-market/*`, …) alike, with no per-plugin bridge. The
+ * download helpers convert the follow-up anchor download into a GET over the
+ * bridge saved through a Blob URL.
  */
 
 import type { DshDesktopBridge } from './ipc-api-client.ts'
@@ -29,24 +32,36 @@ export function isVirtualHostUrl(url: URL): boolean {
 }
 
 /**
- * Whether a URL targets the desktop's in-process host surface: the upstream
- * virtual-host fallback, or the `/api/` plane of the `file://` origin the
- * controller actually builds on the desktop page. Requests to either host
- * dispatch over the IPC bridge instead of the (absent) network.
+ * Whether a URL targets the desktop's in-process host surface: any `file://`
+ * request (the SPA origin — a socketless desktop has no other server, so every
+ * same-origin relative fetch, e.g. a plugin's `/dsh-market/...` route calls, is
+ * host work) or the upstream virtual-host fallback. Absolute `https://` URLs
+ * (external images, CDNs) keep native fetch.
  */
 export function isDesktopHostUrl(url: URL): boolean {
-  if (url.protocol === 'file:' && url.pathname.startsWith('/api/')) return true
-  return isVirtualHostUrl(url)
+  return url.protocol === 'file:' || isVirtualHostUrl(url)
 }
 
-/** One raw host HTTP request carried over the preload bridge. */
-function httpRequest(url: URL, method: string): { type: 'http-request'; method: string; path: string; search: string } {
-  return {
+/**
+ * One raw host HTTP request carried over the preload bridge: the method, path,
+ * search, the observed request headers, and the UTF-8 body when one was
+ * supplied. The main dispatches it against the full webserver route registry.
+ */
+function httpRequest(
+  url: URL,
+  method: string,
+  headers: Record<string, string> | undefined,
+  body: string | undefined,
+): { type: 'http-request'; method: string; path: string; search: string; headers?: Record<string, string>; body?: string } {
+  const message: { type: 'http-request'; method: string; path: string; search: string; headers?: Record<string, string>; body?: string } = {
     type: 'http-request',
     method,
     path: url.pathname,
     search: url.search,
   }
+  if (headers !== undefined && Object.keys(headers).length > 0) message.headers = headers
+  if (body !== undefined && body !== '') message.body = body
+  return message
 }
 
 /**
@@ -87,11 +102,29 @@ export function patchFetch(bridge: DshDesktopBridge): () => void {
       error.name = 'AbortError'
       throw error
     }
-    const method = (init?.method ?? (typeof Request !== 'undefined' && input instanceof Request ? input.method : 'GET')).toUpperCase()
-    const response = await bridge.invoke(httpRequest(url, method)) as HttpBridgeResponse
-    const headers = new Headers(response.headers ?? {})
-    if (method === 'HEAD') return new Response(null, { status: response.status, headers })
-    return new Response(decodeBase64(response.bodyBase64 ?? ''), { status: response.status, headers })
+    const requestLike = typeof Request !== 'undefined' && input instanceof Request ? input : undefined
+    const method = (init?.method ?? requestLike?.method ?? 'GET').toUpperCase()
+    const headers: Record<string, string> = {}
+    const headerSource = init?.headers ?? requestLike?.headers
+    if (headerSource instanceof Headers) {
+      headerSource.forEach((value, key) => { headers[key] = value })
+    } else if (Array.isArray(headerSource)) {
+      for (const [key, value] of headerSource) headers[key] = value
+    } else if (typeof headerSource === 'object' && headerSource !== null) {
+      Object.assign(headers, headerSource)
+    }
+    let body: string | undefined
+    const bodySource = init?.body ?? requestLike?.body
+    if (bodySource !== undefined && bodySource !== null) {
+      // A function-bodied fetch (a stream factory) cannot travel over the
+      // bridge — let it hit the original (which rejects on a socketless host).
+      if (typeof bodySource === 'function') return original(input, init)
+      body = await new Response(bodySource as BodyInit).text()
+    }
+    const response = await bridge.invoke(httpRequest(url, method, headers, body)) as HttpBridgeResponse
+    const responseHeaders = new Headers(response.headers ?? {})
+    if (method === 'HEAD') return new Response(null, { status: response.status, headers: responseHeaders })
+    return new Response(decodeBase64(response.bodyBase64 ?? ''), { status: response.status, headers: responseHeaders })
   }
   return () => { globalThis.fetch = original }
 }
@@ -103,7 +136,7 @@ export function patchFetch(bridge: DshDesktopBridge): () => void {
  * @param filename - browser download filename.
  */
 export async function saveVirtualHostDownload(bridge: DshDesktopBridge, url: URL, filename: string): Promise<void> {
-  const response = await bridge.invoke(httpRequest(url, 'GET')) as HttpBridgeResponse
+  const response = await bridge.invoke(httpRequest(url, 'GET', undefined, undefined)) as HttpBridgeResponse
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`virtual host ${url.pathname} answered HTTP ${response.status}`)
   }
