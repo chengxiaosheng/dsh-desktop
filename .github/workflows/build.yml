@@ -9,10 +9,12 @@
 #   - manual workflow_dispatch
 # Each matrix job runs the whole dist pipeline (build → materialize →
 # electron-builder → headless boot of the packaged resources/host) and uploads
-# the installer artifacts unsigned. Code signing stays off
+# the installer artifacts unsigned. On a v* tag push the installers plus a
+# SHA256SUMS file are also attached to the GitHub Release for that tag (created
+# by .github/workflows/release-please.yml), so users download the app from the
+# repository's Releases page. Code signing stays off
 # (CSC_IDENTITY_AUTO_DISCOVERY is disabled in scripts/electron-builder.mts) and
-# nothing is published (electron-builder.yml sets publish: null): producing an
-# artifact is a build step, publishing it is a separate release decision.
+# nothing else is published (electron-builder.yml sets publish: null).
 
 name: build
 
@@ -80,9 +82,16 @@ jobs:
             script: dist:linux
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    # contents: write lets the release-attach step upload assets to the GitHub
+    # Release (the rest of the job only reads the repo).
+    permissions:
+      contents: write
     env:
+      # Match the local toolchain (the maintainer's dev machine runs Node 24;
+      # engines allow ^22.19.0 || >=24.0.0). pnpm comes from package.json
+      # "packageManager".
       PNPM_VERSION: 11.7.0
-      NODE_VERSION: 22
+      NODE_VERSION: 24
     steps:
       - uses: actions/checkout@v4
 
@@ -155,3 +164,25 @@ jobs:
             packages/dsh-plugin-desktop/dist/*.deb
             packages/dsh-plugin-desktop/dist/*.rpm
           if-no-files-found: error
+
+      # Release asset attachment runs only on v* tag pushes; workflow_dispatch
+      # and master pushes keep workflow artifacts only.
+      - name: Generate checksums (tag releases only)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cd packages/dsh-plugin-desktop/dist
+          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0 | xargs -0 sha256sum | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attach installers to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            packages/dsh-plugin-desktop/dist/*.dmg
+            packages/dsh-plugin-desktop/dist/*.exe
+            packages/dsh-plugin-desktop/dist/*.AppImage
+            packages/dsh-plugin-desktop/dist/*.deb
+            packages/dsh-plugin-desktop/dist/*.rpm
+            packages/dsh-plugin-desktop/dist/SHA256SUMS

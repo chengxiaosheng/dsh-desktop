@@ -74,6 +74,18 @@ GitHub Actions 把关每次提交并产出安装包：
 
 CI 的安装方式与本地 checkout 一致——按 [`upstream.json`](upstream.json) 记录的 dist-tag 重新解析 `@deepseek-ai/*`，因为 `pnpm-lock.yaml` 不提交。
 
+## 版本管理与发布
+
+版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，每个版本都会发布一个附带安装包的 GitHub Release。提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)：`feat` 升 minor、`fix` 升 patch、`BREAKING CHANGE` 升 major。
+
+流程全自动：
+
+1. 合并到 `master` —— [`.github/workflows/release-please.yml`](.github/workflows/release-please.yml) 检查自上次发布以来的提交，打开一个**发布 PR**：统一升级所有 `package.json` 的版本号并更新 `CHANGELOG.md`。
+2. 合并发布 PR —— release-please 创建 `vX.Y.Z` 标签与 GitHub Release。
+3. 标签推送触发 [`.github/workflows/build.yml`](.github/workflows/build.yml)，在原生 runner 上构建 mac DMG、Windows x64 NSIS、Linux AppImage + deb + rpm，并**连同 `SHA256SUMS` 校验文件一起挂到 Release**。
+
+用户从仓库的 **Releases** 页面直接下载：macOS 选 DMG，Windows 选 `-Setup.exe`，Linux 选 AppImage/deb/rpm。
+
 ## 运行截图
 
 > 截图由维护者后续补充。以下区块为占位——请将图片放入 `docs/screenshots/` 并更新路径。

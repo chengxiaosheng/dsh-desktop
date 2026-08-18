@@ -74,6 +74,18 @@ GitHub Actions gates every commit and produces installers:
 
 CI installs the workspace the same way a local checkout does — resolving `@deepseek-ai/*` fresh from the dist-tags in [`upstream.json`](upstream.json), since `pnpm-lock.yaml` is not committed.
 
+## Versioning and releases
+
+Versions follow [Semantic Versioning](https://semver.org), and every release ships a GitHub Release with the installers attached. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `feat` bumps minor, `fix` bumps patch, a `BREAKING CHANGE` bumps major.
+
+The flow is automatic:
+
+1. Merge to `master` — `.github/workflows/release-please.yml` inspects the commits since the last release and opens a **release PR** that bumps the version in every `package.json` and updates `CHANGELOG.md`.
+2. Merge the release PR — release-please creates the `vX.Y.Z` tag and the GitHub Release.
+3. The tag push triggers `.github/workflows/build.yml`, which builds mac DMG, Windows x64 NSIS, and Linux AppImage + deb + rpm on native runners and attaches them (plus a `SHA256SUMS` checksum file) to the Release.
+
+Users download the app from the repository's **Releases** page: macOS picks the DMG, Windows the `-Setup.exe`, Linux the AppImage/deb/rpm.
+
 ## Screenshots
 
 > Screenshots are added by the maintainer. The blocks below are placeholders — drop the images into `docs/screenshots/` and update the paths.

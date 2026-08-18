@@ -1,0 +1,34 @@
+# DSH Desktop — automatic version management with release-please.
+#
+# On every push to master, release-please inspects the commits since the last
+# release (Conventional Commits) and, when a release is due, opens a release
+# PR that bumps the version in every package.json (root + both workspace
+# packages via release-please-config.json extra-files), updates CHANGELOG.md
+# and records the release. Merging that PR creates the v* tag and the GitHub
+# Release; .github/workflows/build.yml picks up the tag push and attaches the
+# installers as release assets. Commits must follow Conventional Commits
+# (feat, fix, ...) for the next version to be inferred correctly.
+
+name: release-please
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: google-github-actions/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          token: ${{ secrets.GITHUB_TOKEN }}

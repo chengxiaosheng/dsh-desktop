@@ -31,10 +31,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # Match the pinned toolchain: pnpm from package.json "packageManager",
-      # Node from the engines range (^22.19.0 || >=24.0.0).
+      # Match the local toolchain (the maintainer's dev machine runs Node 24;
+      # engines allow ^22.19.0 || >=24.0.0). pnpm comes from package.json
+      # "packageManager".
       PNPM_VERSION: 11.7.0
-      NODE_VERSION: 22
+      NODE_VERSION: 24
     steps:
       - uses: actions/checkout@v4
 
