@@ -171,8 +171,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           cd packages/dsh-plugin-desktop/dist
-          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0 | xargs -0 sha256sum | sort -k2 > SHA256SUMS
-          cat SHA256SUMS
+          # Per-platform filename: all three matrix jobs attach to the same
+          # Release, so a shared "SHA256SUMS" name would collide (422) on the
+          # second upload.
+          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0 | xargs -0 sha256sum | sort -k2 > "SHA256SUMS.${{ matrix.target }}"
+          cat "SHA256SUMS.${{ matrix.target }}"
 
       - name: Attach installers to the GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -185,4 +188,4 @@ jobs:
             packages/dsh-plugin-desktop/dist/*.AppImage
             packages/dsh-plugin-desktop/dist/*.deb
             packages/dsh-plugin-desktop/dist/*.rpm
-            packages/dsh-plugin-desktop/dist/SHA256SUMS
+            packages/dsh-plugin-desktop/dist/SHA256SUMS.${{ matrix.target }}

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   git hash-object <file>
-2026-08-18-release-please-versioning-and-releases.md: 2c37a67436bdf666c6cf1030e726e85eb53a9087
-2026-08-18-release-please-versioning-and-releases.zh.md: db3c6f62b80269b33d2cd8c74fab20716bc7af58
+2026-08-18-release-please-versioning-and-releases.md: efbad0858cfa2222795ea5aa77f4449771e8712f
+2026-08-18-release-please-versioning-and-releases.zh.md: 1b944ec0987fc272625961b15fe6a0e295395ea6

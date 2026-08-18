@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-用 release-please 加既有的打包 workflow 把版本生命周期与分发自动化。`.github/workflows/release-please.yml` 在每次 push 到 master 时运行 `googleapis/release-please-action@v5`（已弃用的 `google-github-actions/release-please-action` 的官方继任），以 manifest 模式工作：`release-please-config.json`（`release-type: node`、`package-name: dsh-desktop`、`bump-minor-pre-major: true`）声明组件与 `extra-files`，`.release-please-manifest.json` 记录根组件的当前版本（`".": "0.1.0"`）。action 按 Conventional Commits 推断下一版本，升级根 `package.json` 与两个 workspace `package.json`（经 `extra-files`），更新 `CHANGELOG.md`，并打开发布 PR。合并该 PR 即创建 `vX.Y.Z` 标签与 GitHub Release。`.github/workflows/build.yml` 本就在 `v*` 标签推送时触发；`package` job 现在获得 `contents: write`，且仅在标签推送时，对各自平台的安装包生成 `SHA256SUMS` 并用 `softprops/action-gh-release@v2`（`tag_name` 取 `github.ref_name`）把它们挂到该 Release。用户从仓库的 Releases 页面下载应用。代码签名保持关闭，分发的安装包为未签名。
+用 release-please 加既有的打包 workflow 把版本生命周期与分发自动化。`.github/workflows/release-please.yml` 在每次 push 到 master 时运行 `googleapis/release-please-action@v5`（已弃用的 `google-github-actions/release-please-action` 的官方继任），以 manifest 模式工作：`release-please-config.json`（`release-type: node`、`package-name: dsh-desktop`、`bump-minor-pre-major: true`）声明组件与 `extra-files`，`.release-please-manifest.json` 记录根组件的当前版本（`".": "0.1.0"`）。action 按 Conventional Commits 推断下一版本，升级根 `package.json` 与两个 workspace `package.json`（经 `extra-files`），更新 `CHANGELOG.md`，并打开发布 PR。合并该 PR 即创建 `vX.Y.Z` 标签与 GitHub Release。`.github/workflows/build.yml` 本就在 `v*` 标签推送时触发；`package` job 现在获得 `contents: write`，且仅在标签推送时，对各自平台的安装包生成按平台命名的 `SHA256SUMS.<target>` 校验文件（同名会与三个 matrix job 冲突），并用 `softprops/action-gh-release@v2`（`tag_name` 取 `github.ref_name`）把它们挂到该 Release。用户从仓库的 Releases 页面下载应用。代码签名保持关闭，分发的安装包为未签名。
 
 ## Alternatives considered
 
