@@ -22,7 +22,7 @@
 // Adaptation from upstream: the type import targets the shim's own source.
 // `IApiClient` is published by the package root, `HostFrame`/`MuxFrame`/`RpcRequest`
 // by the `api` subpath, and `HostDescription` (the host.describe success value)
-// by none of the rc.6 package types — it is declared locally below.
+// by none of the published package types — it is declared locally below.
 import type { HostFrame, MuxFrame, RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy'
 

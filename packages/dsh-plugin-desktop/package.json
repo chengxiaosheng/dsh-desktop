@@ -223,7 +223,7 @@
     "@deepseek-ai/schemastery": "latest",
     "@pnpm/exe": "^11.22.0",
     "dsh-plugin-desktop-connection": "workspace:*",
-    "dshmarket": "^1.11.0",
+    "dshmarket": "^1.12.1",
     "node-addon-require-builtin": "^0.1.4",
     "yaml": "^2.9.0"
   },

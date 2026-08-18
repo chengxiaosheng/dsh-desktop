@@ -15,8 +15,13 @@ allowBuilds:
   protobufjs: true
   electron-winstaller: false
 
+# pnpm's default minimum-release-age (24h) would filter a fresh @deepseek-ai
+# release out of the `next` dist-tag resolution (falling back to the previous
+# family) and block a fresh dshmarket; the desktop tracks newest upstream by
+# design, so both are excluded from the release-age check.
 minimumReleaseAgeExclude:
-  - dshmarket@1.11.0
+  - '@deepseek-ai/*'
+  - dshmarket@1.12.1
 
 # app-builder-lib needs @electron/get >= 3.1.0 for ElectronDownloadCacheMode;
 # the ^3.0.0 range otherwise resolves to 3.0.0 which lacks the enum.
