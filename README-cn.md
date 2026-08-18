@@ -65,6 +65,15 @@ pnpm -r test          # 无头启动证明 + client 载波测试
 
 Electron 窗口就是测试所启动的同一进程内宿主的可运行壳层。
 
+## 持续集成
+
+GitHub Actions 把关每次提交并产出安装包：
+
+- `.github/workflows/ci.yml` —— 每次 push 到 `master` 与每个 pull request：`pnpm check`（每个包类型检查、编译与测试）外加无头的 `package:dir` 打包证明。
+- `.github/workflows/build.yml` —— `v*` 标签、手动派发或改动打包文件的 `master` push：在原生 runner 上构建 mac DMG、Windows x64 NSIS 与 Linux AppImage + deb + rpm，并上传未签名产物。
+
+CI 的安装方式与本地 checkout 一致——按 [`upstream.json`](upstream.json) 记录的 dist-tag 重新解析 `@deepseek-ai/*`，因为 `pnpm-lock.yaml` 不提交。
+
 ## 运行截图
 
 > 截图由维护者后续补充。以下区块为占位——请将图片放入 `docs/screenshots/` 并更新路径。

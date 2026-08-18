@@ -65,6 +65,15 @@ pnpm -r test          # headless boot proof + client carrier tests
 
 The Electron window is the runnable shell over the same in-process host the tests boot.
 
+## Continuous integration
+
+GitHub Actions gates every commit and produces installers:
+
+- `.github/workflows/ci.yml` — on every push to `master` and every pull request: `pnpm check` (type-check, compile, and tests for every package) plus a headless `package:dir` packaging proof.
+- `.github/workflows/build.yml` — on a `v*` tag, manual dispatch, or a `master` push touching packaging files: builds mac DMG, Windows x64 NSIS, and Linux AppImage + deb + rpm on native runners and uploads the unsigned artifacts.
+
+CI installs the workspace the same way a local checkout does — resolving `@deepseek-ai/*` fresh from the dist-tags in [`upstream.json`](upstream.json), since `pnpm-lock.yaml` is not committed.
+
 ## Screenshots
 
 > Screenshots are added by the maintainer. The blocks below are placeholders — drop the images into `docs/screenshots/` and update the paths.

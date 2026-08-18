@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   git hash-object <file>
-2026-08-17-electron-builder-packaging.md: af53f4b5c794062f2cd6eae27029b91e955557f4
-2026-08-17-electron-builder-packaging.zh.md: 9060d4cb4631cb68641a6b72f91cd72449965220
+2026-08-18-windows-materialize-path-separator.md: ef4533fd0b266ac91f9405a4c3dc0528c404dd8a
+2026-08-18-windows-materialize-path-separator.zh.md: ac3f2407e8671b58a3b2f441ea23312a1f29fe13

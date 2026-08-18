@@ -1,0 +1,85 @@
+# DSH Desktop — continuous integration.
+#
+# Runs on every push to master and every pull request. Installs the workspace
+# the same way a local checkout does — resolving @deepseek-ai/* fresh from the
+# dist-tags recorded in upstream.json, because pnpm-lock.yaml is not committed
+# — then gates the change with `pnpm check` (per-package strict type-check,
+# compile, and tests, including the verify:upstream pinned-copy gate), then
+# runs `package:dir` to prove the full electron-builder pipeline (build →
+# materialize → electron-builder → headless boot of the packaged
+# resources/host) on the Linux runner. The installers themselves are built by
+# .github/workflows/build.yml, not here.
+
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: type-check, build, tests, package:dir
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Match the pinned toolchain: pnpm from package.json "packageManager",
+      # Node from the engines range (^22.19.0 || >=24.0.0).
+      PNPM_VERSION: 11.7.0
+      NODE_VERSION: 22
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm ${{ env.PNPM_VERSION }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # The pnpm store key hashes the manifests, not a lockfile: installs
+      # float with the dist-tags, so the cache is best-effort but still
+      # skips re-downloading the unchanged dependency set.
+      - name: Get pnpm store path
+        id: store
+        shell: bash
+        run: echo "store=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.store.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('package.json', 'pnpm-workspace.yaml', 'upstream.json', 'packages/**/package.json') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+
+      - name: Cache Electron and electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-cache-${{ runner.os }}-${{ hashFiles('package.json', 'packages/**/package.json') }}
+          restore-keys: electron-cache-${{ runner.os }}-
+
+      - name: Install dependencies
+        shell: bash
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Check (strict type-check + build + tests for every package)
+        shell: bash
+        run: pnpm check
+
+      - name: Package unpacked app (materialize + electron-builder + headless boot)
+        shell: bash
+        run: pnpm package:dir

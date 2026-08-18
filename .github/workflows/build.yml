@@ -1,0 +1,157 @@
+# DSH Desktop — release packaging.
+#
+# Builds installable artifacts for all three platforms through electron-builder
+# on their native runners (installer targets are guarded to a native host by
+# scripts/electron-builder.mts). Triggers:
+#   - push to master that changes packaging-relevant files (detected by
+#     dorny/paths-filter, so ordinary commits do not burn three native runners)
+#   - push of a v* tag (release)
+#   - manual workflow_dispatch
+# Each matrix job runs the whole dist pipeline (build → materialize →
+# electron-builder → headless boot of the packaged resources/host) and uploads
+# the installer artifacts unsigned. Code signing stays off
+# (CSC_IDENTITY_AUTO_DISCOVERY is disabled in scripts/electron-builder.mts) and
+# nothing is published (electron-builder.yml sets publish: null): producing an
+# artifact is a build step, publishing it is a separate release decision.
+
+name: build
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  changes:
+    name: Detect packaging-relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      # Tags and manual dispatch always package; only branch pushes consult the
+      # path filter (no meaningful diff exists for a tag or a manual run).
+      build: ${{ steps.forced.outputs.build || steps.filter.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Always build on tags and manual dispatch
+        id: forced
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        run: echo "build=true" >> "$GITHUB_OUTPUT"
+      - name: Filter packaging-relevant paths (branch pushes only)
+        uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        with:
+          filters: |
+            build:
+              - 'packages/dsh-plugin-desktop/**'
+              - 'packages/dsh-plugin-desktop-connection/**'
+              - 'pnpm-workspace.yaml'
+              - 'upstream.json'
+              - 'package.json'
+              - '.github/workflows/build.yml'
+
+  package:
+    name: Package (${{ matrix.target }})
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || needs.changes.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: mac
+            os: macos-latest
+            script: dist:mac
+          - target: win
+            os: windows-latest
+            script: dist:win
+          - target: linux
+            os: ubuntu-latest
+            script: dist:linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      PNPM_VERSION: 11.7.0
+      NODE_VERSION: 22
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm ${{ env.PNPM_VERSION }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Get pnpm store path
+        id: store
+        run: echo "store=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.store.outputs.store }}
+          key: pnpm-store-${{ matrix.target }}-${{ hashFiles('package.json', 'pnpm-workspace.yaml', 'upstream.json', 'packages/**/package.json') }}
+          restore-keys: pnpm-store-${{ matrix.target }}-
+
+      - name: Configure Electron and electron-builder cache paths
+        id: electron-cache
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            electron="$LOCALAPPDATA/electron/Cache"
+            builder="$LOCALAPPDATA/electron-builder/Cache"
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            electron="$HOME/Library/Caches/electron"
+            builder="$HOME/Library/Caches/electron-builder"
+          else
+            electron="$HOME/.cache/electron"
+            builder="$HOME/.cache/electron-builder"
+          fi
+          echo "electron=$electron" >> "$GITHUB_OUTPUT"
+          echo "builder=$builder" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Electron and electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.electron-cache.outputs.electron }}
+            ${{ steps.electron-cache.outputs.builder }}
+          key: electron-cache-${{ matrix.target }}-${{ hashFiles('package.json', 'packages/**/package.json') }}
+          restore-keys: electron-cache-${{ matrix.target }}-
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Install Linux packaging tools
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm fakeroot libarchive-tools
+
+      - name: Package (${{ matrix.script }})
+        run: pnpm ${{ matrix.script }}
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-desktop-${{ matrix.target }}
+          path: |
+            packages/dsh-plugin-desktop/dist/*.dmg
+            packages/dsh-plugin-desktop/dist/*.exe
+            packages/dsh-plugin-desktop/dist/*.AppImage
+            packages/dsh-plugin-desktop/dist/*.deb
+            packages/dsh-plugin-desktop/dist/*.rpm
+          if-no-files-found: error

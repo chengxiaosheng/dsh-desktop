@@ -39,7 +39,14 @@ run(process.execPath, [join('scripts', 'verify-packaged-boot.mts')], 'boot the p
  */
 function run(command: string, stepArgs: string[], what: string): void {
   console.log(`dist: ${what}`)
-  const result = spawnSync(command, stepArgs, { cwd: pkgRoot, stdio: 'inherit' })
+  // On Windows a bare `pnpm` resolves to the pnpm.cmd shim, which spawnSync
+  // cannot launch directly; shell: true lets cmd resolve it. Node on other
+  // platforms resolves the binary itself, so the shell stays off there.
+  const result = spawnSync(command, stepArgs, {
+    cwd: pkgRoot,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  })
   if (result.error !== undefined) throw result.error
   if (result.status !== 0) {
     console.error(`dist: step failed (${what}), exit ${String(result.status)}`)

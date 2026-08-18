@@ -44,7 +44,12 @@ mac:
     - dmg
   category: public.app-category.developer-tools
   icon: build/icon.png
-  hardenedRuntime: true
+  # Unsigned builds (CSC_IDENTITY_AUTO_DISCOVERY=false) never run codesign, so
+  # hardened runtime is inert here and must stay off: enabled, it would reject
+  # the pre-signed Electron frameworks under ad-hoc signing (library
+  # validation). Flip it to true only when real Developer ID signing + proper
+  # entitlements land.
+  hardenedRuntime: false
   artifactName: DSH-Desktop-${version}-${arch}.${ext}
 win:
   target:

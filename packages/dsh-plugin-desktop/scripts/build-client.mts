@@ -59,7 +59,7 @@ const cssModuleLoader: Plugin = {
         classMap[name] = hashed
         css = css.replaceAll(`.${name}`, `.${hashed}`)
       }
-      const tagId = `${pkgName}/${args.path.split('/').pop()}`
+      const tagId = `${pkgName}/${args.path.split(/[\\/]/).pop()}`
       const contents = [
         `const css = ${JSON.stringify(css)};`,
         `const tagId = ${JSON.stringify(tagId)};`,

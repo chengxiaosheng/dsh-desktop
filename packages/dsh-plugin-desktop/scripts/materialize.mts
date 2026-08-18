@@ -204,7 +204,10 @@ function copyRuntime(sourceDir: string, targetDir: string): void {
     filter: (src) => {
       const rel = relative(sourceDir, src)
       if (rel === '') return true // the copy root itself
-      const first = rel.split('/')[0]
+      // On Windows path.relative() is backslash-separated, so split on either
+      // separator or the node_modules guard below silently stops matching and
+      // the copy drags in pnpm's nested-symlink tree (EPERM / bloat).
+      const first = rel.split(/[\\/]/)[0]
       if (first === 'node_modules') return false
       if (first === 'scripts' || first === 'tests') return false
       if (basename(src) === 'tsconfig.tsbuildinfo') return false
