@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-desktop-connection",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "DSH Desktop renderer connection: official node half re-export + Electron IPC client carrier",
   "license": "MIT",

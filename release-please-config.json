@@ -5,6 +5,7 @@
       "release-type": "node",
       "package-name": "dsh-desktop",
       "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "packages/dsh-plugin-desktop/package.json",
         "packages/dsh-plugin-desktop-connection/package.json"
