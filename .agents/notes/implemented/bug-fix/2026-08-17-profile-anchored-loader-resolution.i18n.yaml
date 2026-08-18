@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   git hash-object <file>
-2026-08-17-profile-anchored-loader-resolution.md: 685ff0a34192fb4e3506c586881b480d05933ec3
-2026-08-17-profile-anchored-loader-resolution.zh.md: 66c5cae1f8fe7cf38ae6e4ef26f938840de571d1
+2026-08-17-profile-anchored-loader-resolution.md: 55a9956cfe47c2069a054c6fa5b865f66c0c09c3
+2026-08-17-profile-anchored-loader-resolution.zh.md: bbe0e8179453ef8b4e1d291d261d659ce19f90f1

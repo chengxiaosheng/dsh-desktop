@@ -109,28 +109,49 @@ export function canResolveBare(profilePackageUrl: string, specifier: string): bo
 }
 
 /**
- * Build the profile-anchored internal loader.
+ * Build the internal loader: bare names resolve from the installation closure
+ * first, falling back to the native internal (when one exists) or the profile
+ * for packages only the user installed.
  * @param profilePackageUrl - the active profile's `package.json` file URL (the
- *   `bareModuleBaseUrl` the desktop boots with); bare names resolve from it.
+ *   `bareModuleBaseUrl` the desktop boots with); fallback base for bare names
+ *   the installation cannot resolve.
+ * @param installAnchorUrl - the app install's `package.json` file URL; the
+ *   primary base for bare names, keeping in-box packages on the app's copy.
  * @param native - the loader's original `internal` when the host provided one
- *   (plain Node); delegated to unchanged when present.
+ *   (plain Node); used as the profile fallback, never the primary resolver.
  * @returns the `internal` hook to install on `ctx.loader`.
  */
-export function createProfileLoaderInternal(profilePackageUrl: string, native?: ProfileLoaderInternal): ProfileLoaderInternal {
-  const require = createRequire(profilePackageUrl)
+export function createProfileLoaderInternal(
+  profilePackageUrl: string,
+  installAnchorUrl: string,
+  native?: ProfileLoaderInternal,
+): ProfileLoaderInternal {
+  const requireInstall = createRequire(installAnchorUrl)
+  const requireProfile = createRequire(profilePackageUrl)
   return {
     async import(specifier, baseUrl, options) {
-      if (native !== undefined) return native.import(specifier, baseUrl, options)
       if (specifier.startsWith('node:')) return import(specifier)
       if (specifier.startsWith('.') || specifier.startsWith('/')
         || specifier.startsWith('file:') || specifier.startsWith('data:')
         || specifier.startsWith('http:') || specifier.startsWith('https:')) {
         return import(new URL(specifier, baseUrl ?? profilePackageUrl).href)
       }
-      // Bare npm name (optionally a subpath like `pkg/entry`): anchor to the
-      // profile, where `dsh plugin add` installed it.
-      const filePath = resolveBareEntry(require, specifier)
-      return import(pathToFileURL(filePath).href)
+      // Bare npm name (optionally a subpath like `pkg/entry`): prefer the
+      // installation closure so in-box singleton services (dsh-tools,
+      // dsh-agent-loop, dsh-llm, …) resolve to the app's module instance — a
+      // profile-installed duplicate would otherwise split `unique symbol`
+      // keys and break cross-package identity. When the installation lacks
+      // the package, defer to the native internal (full ESM-exports handling)
+      // or the profile-anchored resolver — either resolves packages only the
+      // user installed.
+      let installPath: string
+      try {
+        installPath = resolveBareEntry(requireInstall, specifier)
+      } catch {
+        if (native !== undefined) return native.import(specifier, baseUrl, options)
+        return import(pathToFileURL(resolveBareEntry(requireProfile, specifier)).href)
+      }
+      return import(pathToFileURL(installPath).href)
     },
   }
 }

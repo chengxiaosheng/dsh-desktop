@@ -198,9 +198,16 @@ export async function bootDesktop(home = resolveDshHome()): Promise<Context> {
       // internal module loader (backed by node-addon-require-builtin) is
       // unavailable under Electron, so without this hook a plugin installed
       // into the profile's node_modules cannot be resolved at the next boot.
+      // Bare names prefer the installation closure (installAnchorUrl) so
+      // in-box singleton services stay on the app's module instance; the
+      // profile remains the fallback for user-installed packages.
       const loader = host.get('loader') as { internal?: unknown } | undefined
       if (loader !== undefined) {
-        loader.internal = createProfileLoaderInternal(bareModuleBaseUrl, loader.internal as ProfileLoaderInternal | undefined)
+        loader.internal = createProfileLoaderInternal(
+          bareModuleBaseUrl,
+          pathToFileURL(INSTALL_ANCHOR).href,
+          loader.internal as ProfileLoaderInternal | undefined,
+        )
       }
     },
     bareModuleBaseUrl,
