@@ -24,6 +24,7 @@ import { readCloseBehavior } from '../src/index.js'
 import { CLOSE_TO_TRAY_FIELD, DESKTOP_SETTINGS_NAMESPACE } from '../src/settings.js'
 import { readMarketVersion, rollbackMarketVersion, updateMarketVersion } from './market-version.js'
 import { composeDesktopManifest, dispatchHttpRequest, type DesktopHostConnection, type FetchHandler, type HttpRequestMessage } from './boot-desktop.js'
+import { createWebSocketBridge, type DesktopWsEvent, type DesktopWsOpenRequest } from './websocket-bridge.js'
 
 /** One client->host RPC envelope the renderer carrier sends over the bridge. */
 interface ClientRequest {
@@ -71,6 +72,7 @@ export function installIpc(ctx: Context, getWebContents: () => WebContents | und
     installBootManifestChannel(ctx),
     installInvokeChannel(ctx, connection),
     installStreamPumps(ctx, getWebContents),
+    installWsChannels(ctx, getWebContents),
     installCloseBehaviorChannel(ctx),
     installMarketVersionChannel(ctx),
   ]
@@ -302,5 +304,59 @@ function errorResult(message: string): ErrorResponse {
     type: 'server-response',
     rpcId: 'invalid-request',
     result: { ok: false, error: { code: 'bad-request', message, details: {} } },
+  }
+}
+
+/**
+ * The virtual-host WebSocket channels. `dsh:ws-open` (invoke) runs the
+ * registered upgrade route in-process and answers `ws-opened`/`ws-failed`;
+ * `dsh:ws-send`/`dsh:ws-close` (one-way) relay message and close frames; the
+ * bridge's events push to the renderer over `dsh:ws-event`. Every socket is
+ * bound to the renderer context that opened it: a main-frame navigation
+ * (reload, host reboot reload) or a destroyed web contents tears the socket
+ * down, which the plugin's own `close` handlers treat as a bare socket drop
+ * (ptys keep their reconnect grace).
+ */
+function installWsChannels(ctx: Context, getWebContents: () => WebContents | undefined): () => void {
+  const bridge = createWebSocketBridge(ctx, (event: DesktopWsEvent) => {
+    getWebContents()?.send('dsh:ws-event', event)
+  })
+  const onOpen = async (event: Electron.IpcMainInvokeEvent, request: unknown): Promise<unknown> => {
+    const body = request as DesktopWsOpenRequest | undefined
+    if (typeof body !== 'object' || body === null || body.type !== 'ws-open') {
+      return { type: 'ws-failed', message: 'invalid ws-open request' }
+    }
+    const result = await bridge.open(body)
+    if (result.type === 'ws-opened') {
+      // The renderer context owns every socket it opened.
+      const wc = event.sender
+      const teardown = (): void => bridge.terminate(result.socketId)
+      wc.on('did-navigate', teardown)
+      wc.once('destroyed', teardown)
+      bridge.onSocketClosed(() => {
+        wc.removeListener('did-navigate', teardown)
+        wc.removeListener('destroyed', teardown)
+      })
+    }
+    return result
+  }
+  const onSend = (_event: Electron.IpcMainEvent, message: unknown): void => {
+    const body = message as { socketId?: unknown; data?: unknown; binary?: unknown } | undefined
+    if (typeof body?.socketId !== 'string' || body.data === undefined) return
+    bridge.send(body.socketId, body.data as string | { b64: string }, body.binary === true)
+  }
+  const onClose = (_event: Electron.IpcMainEvent, message: unknown): void => {
+    const body = message as { socketId?: unknown; code?: unknown; reason?: unknown } | undefined
+    if (typeof body?.socketId !== 'string') return
+    bridge.close(body.socketId, typeof body.code === 'number' ? body.code : 1000, typeof body.reason === 'string' ? body.reason : '')
+  }
+  ipcMain.handle('dsh:ws-open', onOpen)
+  ipcMain.on('dsh:ws-send', onSend)
+  ipcMain.on('dsh:ws-close', onClose)
+  return () => {
+    ipcMain.removeHandler('dsh:ws-open')
+    ipcMain.removeListener('dsh:ws-send', onSend)
+    ipcMain.removeListener('dsh:ws-close', onClose)
+    bridge.dispose()
   }
 }

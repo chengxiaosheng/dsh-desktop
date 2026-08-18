@@ -10,7 +10,7 @@ English | [中文](2026-08-16-virtual-webserver-interceptor.zh.md)
 
 ## Decision
 
-桌面组合层禁用官方 `webserver` 行，挂载 `dsh-plugin-desktop/webserver`——一个 `VirtualWebServer extends Service`，以与官方完全一致的注册表契约提供 `webServer` 服务（`register`、`registerUpgrade`、`registerFallback`、`tapIndex`、`applyIndexTaps`、`host`、`port`，含重复抛错、最长前缀、单兜底座、tap 顺序语义），但其 `[Service.init]` 从不绑定 socket。`host` 上报 `127.0.0.1`，使 `web-runtime` 推导出仅 loopback 信任。官方 `connection` 与 `modules` 行照常挂载于其上；宿主在进程内分发——`/api` RPC 走 `connection.createSharedFetchHandler` 加 `toFetchHandler(apiProxy)`，其余所有 webserver 路由（含插件市场的 `/dsh-market/*`）走[插件市场集成笔记](2026-08-17-plugin-market-transport-and-services.zh.md)所述的全注册表代理。
+桌面组合层禁用官方 `webserver` 行，挂载 `dsh-plugin-desktop/webserver`——一个 `VirtualWebServer extends Service`，以与官方完全一致的注册表契约提供 `webServer` 服务（`register`、`registerUpgrade`、`registerFallback`、`tapIndex`、`applyIndexTaps`、`host`、`port`，含重复抛错、最长前缀、单兜底座、tap 顺序语义），但其 `[Service.init]` 从不绑定 socket。`host` 上报 `127.0.0.1`，使 `web-runtime` 推导出仅 loopback 信任；`port` 在配置为 `0` 时上报稳定虚拟端口 `VIRTUAL_HOST_PORT`，读取 `webServer.port` 在宿主侧连 harness 的插件由[宿主侧虚拟主机传输](2026-08-18-desktop-host-side-virtual-host-transport.zh.md)服务。官方 `connection` 与 `modules` 行照常挂载于其上；宿主在进程内分发——`/api` RPC 走 `connection.createSharedFetchHandler` 加 `toFetchHandler(apiProxy)`，其余所有 webserver 路由（含插件市场的 `/dsh-market/*`）走[插件市场集成笔记](2026-08-17-plugin-market-transport-and-services.zh.md)所述的全注册表代理。
 
 ## Alternatives considered
 

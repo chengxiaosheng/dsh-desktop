@@ -11,8 +11,9 @@ const { contextBridge, ipcRenderer } = require('electron') as typeof import('ele
 contextBridge.exposeInMainWorld('__DSH_BOOT__', ipcRenderer.sendSync('dsh:boot-manifest'))
 
 // The desktop connection carrier: unary/respond over invoke, downlink streams
-// over the frame channel, plus the shell preference surface (close-behavior
-// read/write over invoke, tray labels one-way).
+// over the frame channel, virtual-host WebSockets over the ws channels, plus
+// the shell preference surface (close-behavior read/write over invoke, tray
+// labels one-way).
 contextBridge.exposeInMainWorld('dshDesktop', {
   invoke: (request: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:invoke', request),
   subscribe: (channel: unknown, listener: (message: unknown) => void): (() => void) => {
@@ -25,6 +26,18 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       ipcRenderer.removeListener('dsh:frame', cb)
       ipcRenderer.send('dsh:unsubscribe', channel)
     }
+  },
+  wsOpen: (request: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:ws-open', request),
+  wsSend: (socketId: unknown, data: unknown, binary: unknown): void => {
+    ipcRenderer.send('dsh:ws-send', { socketId, data, binary })
+  },
+  wsClose: (socketId: unknown, code: unknown, reason: unknown): void => {
+    ipcRenderer.send('dsh:ws-close', { socketId, code, reason })
+  },
+  onWsEvent: (listener: (event: unknown) => void): (() => void) => {
+    const cb = (_event: Electron.IpcRendererEvent, message: unknown): void => listener(message)
+    ipcRenderer.on('dsh:ws-event', cb)
+    return () => ipcRenderer.removeListener('dsh:ws-event', cb)
   },
   getCloseBehavior: (): Promise<unknown> => ipcRenderer.invoke('dsh:close-behavior', { type: 'read' }),
   setCloseBehavior: (value: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:close-behavior', { type: 'write', value }),

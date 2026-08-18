@@ -11,11 +11,11 @@
 
 ### 零 socket 宿主的完整 Web UI
 
-在桌面窗口中运行完整的 DeepSeek Harness Web UI（会话日志、工具、模型路由、agent 循环）。宿主从不绑定 socket：虚拟 `webServer` 拦截器以官方路由注册表契约提供服务但不开端口，渲染端 wire client 改乘 Electron IPC 桥接而非 HTTP/WebSocket，所有宿主路由（`/api` 平面、会话日志下载与任意插件路由）都在进程内分发。官方 `modules`、`ui-theme`、`web-runtime` 与 `frontend-static` 行照常激活。
+在桌面窗口中运行完整的 DeepSeek Harness Web UI（会话日志、工具、模型路由、agent 循环）。宿主从不绑定 socket：虚拟 `webServer` 拦截器以官方路由注册表契约提供服务但不开端口，渲染端 wire client 改乘 Electron IPC 桥接而非 HTTP/WebSocket，所有宿主路由（`/api` 平面、会话日志下载与任意插件路由）都在进程内分发。官方 `modules`、`ui-theme`、`web-runtime` 与 `frontend-static` 行照常激活。拦截器上报一个稳定的虚拟端口，宿主侧虚拟主机传输会把"读取 `webServer.port`、从主进程连 harness"的插件（dsh-im 及同类）也在进程内服务。
 
 ### 内置插件市场
 
-默认内置 [dshmarket](https://github.com/dsh-market/dsh-market)：打开 **设置 → 插件市场**，浏览、搜索并一键安装社区插件。市场的 `/dsh-market/*` 路由经进程内宿主分发，桌面端提供市场的宿主契约（`desktopProfiles` + `desktopPnpm`）。安装走真实的 `dsh plugin --profile desktop …` CLI，它从系统 PATH 驱动 `pnpm`——因此安装插件需要机器上有 `pnpm`。已安装的插件在下次启动时经以 profile 为锚的加载器钩子加载。
+默认内置 [dshmarket](https://github.com/dsh-market/dsh-market)：打开 **设置 → 插件市场**，浏览、搜索并一键安装社区插件。市场的 `/dsh-market/*` 路由经进程内宿主分发，桌面端提供市场的宿主契约（`desktopProfiles` + `desktopPnpm`）。安装走真实的 `dsh plugin --profile desktop …` CLI，它从系统 PATH 驱动 `pnpm`——桌面端会把标准的用户工具目录（Homebrew、`~/.local/bin`、`~/.local/share/pnpm`、`~/.npm-global`、`~/.volta`、nvm）追加到该 PATH，因此安装插件需要 `pnpm` 位于这些标准位置之一。已安装的插件在下次启动时经以 profile 为锚的加载器钩子加载。
 
 ### 系统托盘与关闭到托盘
 
@@ -114,6 +114,8 @@ CI 的安装方式与本地 checkout 一致——按 [`upstream.json`](upstream.
 | 启动清单 | Electron preload（`window.__DSH_BOOT__`） | 服务器 index tap |
 | RPC 分发 | `ipcMain`（`connection.createSharedFetchHandler` + `apiProxy`） | HTTP/WebSocket 载波 |
 | 虚拟主机 HTTP 代理 | `dsh-plugin-desktop-connection` client + `dispatchHttpRequest`（main） | 宿主 HTTP 面——任意 webserver 路由经 IPC 进程内分发 |
+| 虚拟主机 WebSocket 桥 | `dsh-plugin-desktop-connection` client + `websocket-bridge`（main） | 宿主 WebSocket 面——升级路由经 IPC 进程内服务 |
+| 宿主侧虚拟主机传输 | `host-bridge`（main） | 宿主侧兼容面——读取 `webServer.port` 并以 `fetch`/`WebSocket` 连 harness 的插件（dsh-im 及同类）被进程内服务 |
 
 ### 仓库布局
 
@@ -136,3 +138,4 @@ docs/                           架构地图
 - 宿主重启是手动的（设置动作与托盘项）；自动触发等待持久的宿主可读信号。
 - 渲染端 `ConnectionController` 是上游源码的固定副本；`verify:upstream` 在已安装版本族不一致时使构建失败，需从记录 commit 处重新应用。
 - 桌面保持零 socket 宿主；`deepseek-harness-desktop` 项目是另一种 loopback 载波设计，可作对比。
+- 宿主侧虚拟主机传输只服务标准 Web API（`fetch`/`WebSocket`）；只走原生 `node:http`/`https`（如不带 fetch 适配器的 axios）的插件没有可拦截的通路，需要真实 socket。

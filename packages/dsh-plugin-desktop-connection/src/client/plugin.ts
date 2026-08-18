@@ -10,6 +10,7 @@
 import { IpcApiClient, createDesktopConnectionRpc, type DshDesktopBridge } from './ipc-api-client.ts'
 import { ConnectionController, type ConnectionConfig, type HostDescription } from './controller.ts'
 import { patchAnchorClick, patchDownloadClicks, patchFetch } from './host-http.ts'
+import { patchWebSocket } from './host-websocket.ts'
 import { installSlotsCompat } from './slots-compat.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionHandle, ConnectionSinks } from '@deepseek-ai/dsh-client-connection/client'
@@ -90,4 +91,8 @@ export function apply(ctx: Context): void {
   ctx.effect(() => patchFetch(bridge), 'desktop-connection: virtual-host fetch bridge')
   ctx.effect(() => patchDownloadClicks(bridge), 'desktop-connection: virtual-host download bridge')
   ctx.effect(() => patchAnchorClick(bridge), 'desktop-connection: virtual-host anchor-click bridge')
+  // Virtual-host WebSocket bridge: plugin WebSockets targeting the host's
+  // upgrade routes (file:-derived or ws://dsh.internal URLs) ride the bridge
+  // instead of throwing on the file:// page's unusable origin.
+  ctx.effect(() => patchWebSocket(bridge), 'desktop-connection: virtual-host websocket bridge')
 }

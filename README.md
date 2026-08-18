@@ -11,11 +11,11 @@ A desktop product around the **unmodified** published DeepSeek Harness packages:
 
 ### Full Web UI with a zero-socket host
 
-Runs the complete DeepSeek Harness Web UI (session log, tools, model route, agent loop) in a desktop window. The host never binds a socket: a virtual `webServer` interceptor provides the official route-registry contract without a port, the renderer wire client rides an Electron IPC bridge instead of HTTP/WebSocket, and every host route (the `/api` plane, the session-log download, and any plugin route) dispatches in-process. The official `modules`, `ui-theme`, `web-runtime`, and `frontend-static` rows activate unchanged.
+Runs the complete DeepSeek Harness Web UI (session log, tools, model route, agent loop) in a desktop window. The host never binds a socket: a virtual `webServer` interceptor provides the official route-registry contract without a port, the renderer wire client rides an Electron IPC bridge instead of HTTP/WebSocket, and every host route (the `/api` plane, the session-log download, and any plugin route) dispatches in-process. The official `modules`, `ui-theme`, `web-runtime`, and `frontend-static` rows activate unchanged. The interceptor reports a stable virtual port, and the host-side virtual-host transport serves plugins that read `webServer.port` and reach the harness from the main process (dsh-im and similar) in-process too.
 
 ### Built-in plugin market
 
-Ships [dshmarket](https://github.com/dsh-market/dsh-market) as the default plugin market: open **Settings → Plugin Market**, browse, search, and one-click install community plugins. The market's `/dsh-market/*` routes dispatch through the in-process host, and the desktop provides the market's host contract (`desktopProfiles` + `desktopPnpm`). Installs run the real `dsh plugin --profile desktop …` CLI, which drives `pnpm` from the system PATH — so installing plugins requires `pnpm` on the machine. Installed plugins load at the next boot through a profile-anchored loader hook.
+Ships [dshmarket](https://github.com/dsh-market/dsh-market) as the default plugin market: open **Settings → Plugin Market**, browse, search, and one-click install community plugins. The market's `/dsh-market/*` routes dispatch through the in-process host, and the desktop provides the market's host contract (`desktopProfiles` + `desktopPnpm`). Installs run the real `dsh plugin --profile desktop …` CLI, which drives `pnpm` from the system PATH — the desktop appends the standard user tool locations (Homebrew, `~/.local/bin`, `~/.local/share/pnpm`, `~/.npm-global`, `~/.volta`, and nvm) to that PATH, so installing plugins requires `pnpm` in one of those standard locations. Installed plugins load at the next boot through a profile-anchored loader hook.
 
 ### System tray and close-to-tray
 
@@ -114,6 +114,8 @@ Users download the app from the repository's **Releases** page: macOS picks the 
 | Boot manifest | Electron preload (`window.__DSH_BOOT__`) | the server index tap |
 | RPC dispatch | `ipcMain` (`connection.createSharedFetchHandler` + `apiProxy`) | the HTTP/WebSocket carrier |
 | Virtual-host HTTP proxy | `dsh-plugin-desktop-connection` client + `dispatchHttpRequest` (main) | the host HTTP surface — any webserver route dispatches in-process over IPC |
+| Virtual-host WebSocket bridge | `dsh-plugin-desktop-connection` client + `websocket-bridge` (main) | the host WebSocket surface — upgrade routes serve in-process over IPC |
+| Host-side virtual-host transport | `host-bridge` (main) | the host-side surface — plugins that read `webServer.port` and reach the harness with `fetch`/`WebSocket` are served in-process (dsh-im and similar) |
 
 ### Repository layout
 
@@ -136,3 +138,4 @@ The desktop is a presentation and transport surface over the standard DeepSeek H
 - The host reboot is manual (a settings action and a tray item); auto-triggering waits on a durable host-readable signal.
 - The renderer `ConnectionController` is a pinned copy of the upstream source; `verify:upstream` fails the build when the installed family differs, forcing a reapply from the recorded commit.
 - The desktop keeps a zero-socket host; the `deepseek-harness-desktop` project is the alternative loopback-carrier design for comparison.
+- The host-side virtual-host transport serves the standard web APIs (`fetch`/`WebSocket`); a plugin that reaches the harness through raw `node:http`/`https` (e.g. axios without the fetch adapter) has no intercepted path and would need a real socket.

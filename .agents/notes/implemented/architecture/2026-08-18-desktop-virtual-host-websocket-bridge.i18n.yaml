@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   git hash-object <file>
-2026-08-18-system-pnpm-only.md: 04296b3b27cab3bb583ee3b29e55007e26f9f83a
-2026-08-18-system-pnpm-only.zh.md: 485654c38087b8dfd76a43c3e4623680ea66b03a
+2026-08-18-desktop-virtual-host-websocket-bridge.md: 4a8682033e535c72860a201b40dc3573aec98b76
+2026-08-18-desktop-virtual-host-websocket-bridge.zh.md: d545af53d8adfc66b86214f2c856d31a9bb2741a

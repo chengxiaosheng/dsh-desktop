@@ -38,6 +38,11 @@ function fakeBridge(handlers: { invoke?: (request: { path: string; body?: unknow
       listeners.set(channel, listener)
       return () => { listeners.delete(channel) }
     },
+    // WebSocket surface: stubbed (the ws bridge tests live in host-websocket.spec.ts).
+    wsOpen: async () => ({ type: 'ws-failed', message: 'not exercised' } as const),
+    wsSend: (): void => {},
+    wsClose: (): void => {},
+    onWsEvent: () => () => {},
   }
   return bridge
 }

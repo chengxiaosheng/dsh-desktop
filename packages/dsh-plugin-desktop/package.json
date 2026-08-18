@@ -236,7 +236,8 @@
     "electron-builder": "26.15.3",
     "esbuild": "^0.25.0",
     "react": "^18.2.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "ws": "^8.18.0"
   },
   "main": "lib/electron/main.js"
 }

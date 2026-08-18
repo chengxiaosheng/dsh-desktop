@@ -11,15 +11,22 @@
  * variant that runs pnpm directly with the active profile as cwd.
  *
  * pnpm resolution: pnpm is resolved from the system PATH (the bundled
- * standalone binary is not shipped). The `dsh` CLI entry runs under Electron's
- * plain-Node mode (`ELECTRON_RUN_AS_NODE`), so the CLI itself needs no system
- * Node; only `pnpm` must exist on PATH for plugin installs.
+ * standalone binary is not shipped). A GUI launch inherits a sparse PATH (no
+ * shell profile), so every spawned child gets the inherited PATH plus the
+ * well-known user bin dirs appended by `path-bootstrap.ts` — a user pnpm in
+ * homebrew, `~/.local/bin`, `~/.local/share/pnpm`, `~/.npm-global/bin`,
+ * `~/.volta/bin`, or an nvm node bin resolves regardless of how the app was
+ * started. The `dsh` CLI entry runs under Electron's plain-Node mode
+ * (`ELECTRON_RUN_AS_NODE`), so the CLI itself needs no system Node; only
+ * `pnpm` must exist in a discoverable location for plugin installs.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { createRequire } from 'node:module'
+import { buildChildPath, childPathDirs } from './path-bootstrap.ts'
 import { resolvePackageRoot } from './package-root.ts'
 
 const PKG_ROOT = resolvePackageRoot()
@@ -71,6 +78,11 @@ function resolveDshBin(): string {
 function childEnv(asNode: boolean): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
   if (asNode) env.ELECTRON_RUN_AS_NODE = '1'
+  // GUI launches skip the shell profile, so the inherited PATH misses
+  // user-installed tools; append the well-known user bin dirs so the `dsh`
+  // CLI's `spawnSync("pnpm")` resolves pnpm regardless of how the app started.
+  // Windows keeps its inherited PATH (its user tools are already user-PATH'd).
+  if (process.platform !== 'win32') env.PATH = buildChildPath(env.PATH, childPathDirs(homedir()))
   return env
 }
 

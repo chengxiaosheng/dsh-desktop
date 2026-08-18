@@ -33,6 +33,9 @@
       name: dsh-plugin-desktop-connection
 
     # Virtual (socketless) webServer provider — the interceptor.
+    # `port: 0` means "no real port": the service reports the stable virtual
+    # port VIRTUAL_HOST_PORT, which the host-side virtual-host bridge serves
+    # to plugins that read webServer.port.
     - id: desktop-webserver
       name: dsh-plugin-desktop/webserver
       config:

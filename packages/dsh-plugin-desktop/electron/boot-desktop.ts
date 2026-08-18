@@ -35,6 +35,7 @@ import type { VirtualWebServer, WebRoute } from '../src/webserver.ts'
 import { resolvePackageRoot } from './package-root.ts'
 import { createDesktopServices } from './desktop-services.ts'
 import { createProfileLoaderInternal, canResolveBare, type ProfileLoaderInternal } from './loader-internal.ts'
+import { installHostBridge } from './host-bridge.ts'
 
 const PKG_ROOT = resolvePackageRoot()
 const INSTALL_ANCHOR = join(PKG_ROOT, 'package.json')
@@ -313,6 +314,13 @@ export async function bootDesktop(home = resolveDshHome()): Promise<Context> {
     patches,
     async (host) => {
       provideCmdline(host, { args: ['--host', '127.0.0.1', '--port', '0'], exit: () => {} })
+      // The host-side virtual-host transport, installed before Loader entries
+      // apply: a plugin's `fetch`/`WebSocket` reference is captured at
+      // construction time, so any plugin that reads `webServer.port` to build a
+      // harness base URL must already see the patched globals. Registered as a
+      // context effect so fiber dispose (including the in-process reboot)
+      // restores the originals.
+      host.effect(() => installHostBridge(host), 'dsh-desktop: host virtual-host bridge')
       // Desktop host services, registered before Loader entries mount: the
       // plugin market reads them to target the active profile and to run
       // package operations through the `dsh` CLI.
@@ -394,7 +402,7 @@ export interface DesktopHostConnection {
 }
 
 /** The virtual-host identity the desktop transport reports to renderer code. */
-const VIRTUAL_HOST = 'dsh.internal'
+export const VIRTUAL_HOST = 'dsh.internal'
 
 /**
  * The loopback host the synthesized Origin/Host headers carry. The official
@@ -609,6 +617,10 @@ export async function dispatchHttpRequest(ctx: Context, request: HttpRequestMess
   // The composed `/api` plane keeps its proven fast path (unary RPC + the
   // session-log download surface) — the same surface the connection's `/api`
   // prefix route serves, preserved without the registry's req/res stand-ins.
+  // Method, headers, and body are forwarded so a host-side client (the
+  // virtual-host fetch bridge) POSTs its client-request/client-response
+  // envelope through unchanged — the shared handler parses it exactly like the
+  // official server would.
   if (target.pathname.startsWith(`${API_PATH}/`)) {
     const connection = ctx.get('connection') as DesktopHostConnection | undefined
     const apiProxy = ctx.get('apiProxy')
@@ -618,7 +630,11 @@ export async function dispatchHttpRequest(ctx: Context, request: HttpRequestMess
     const apiFetchHandler = connection.createSharedFetchHandler(API_PATH, {
       fetch: (req) => toFetchHandler(apiProxy).fetch(req),
     })
-    const response = await apiFetchHandler.fetch(new Request(target, { method }))
+    const response = await apiFetchHandler.fetch(new Request(target, {
+      method,
+      headers: request.headers,
+      body: request.body,
+    }))
     const headers = Object.fromEntries(response.headers.entries())
     const body = Buffer.from(await response.arrayBuffer())
     return { status: response.status, headers, bodyBase64: body.toString('base64') }

@@ -20,6 +20,36 @@ export type DshDesktopFrame =
   | { type: 'server-request'; rpcId: string; method: string; payload: unknown }
 
 /**
+ * One main→renderer WebSocket event. Mirrored by the desktop package's
+ * `electron/websocket-bridge.ts` (`DesktopWsEvent`).
+ */
+export type DesktopWsEvent =
+  | { type: 'ws-message'; socketId: string; data: string | { b64: string }; binary: boolean }
+  | { type: 'ws-close'; socketId: string; code: number; reason: string }
+
+/**
+ * The ws-open invoke reply. Mirrored by the desktop package's
+ * `electron/websocket-bridge.ts` (`DesktopWsOpenResult`).
+ */
+export type DesktopWsOpenResult =
+  | { type: 'ws-opened'; socketId: string }
+  | { type: 'ws-failed'; message: string }
+
+/**
+ * One renderer→main ws-open request. Mirrored by the desktop package's
+ * `electron/websocket-bridge.ts` (`DesktopWsOpenRequest`).
+ */
+export interface DesktopWsOpenRequest {
+  type: 'ws-open'
+  /** Renderer-minted socket id; every later message correlates on it. */
+  socketId: string
+  /** Absolute virtual-host WebSocket URL (scheme ws/wss, host `dsh.internal`). */
+  url: string
+  /** Subprotocols as passed to `new WebSocket`, when any. */
+  protocols?: string[]
+}
+
+/**
  * The preload bridge the Electron main process exposes to the renderer
  * (`window.dshDesktop`). Implemented by the Electron main over IPC; the carrier
  * is the only desktop-specific dependency this package knows.
@@ -36,6 +66,26 @@ export interface DshDesktopBridge {
    * closes the stream. Returns the unsubscribe function.
    */
   subscribe(channel: 'mux' | 'host', listener: (frame: DshDesktopFrame) => void): () => void
+  /**
+   * Open one WebSocket against the in-process host's upgrade routes. The main
+   * runs the registered upgrade handler in-process and answers `ws-opened`
+   * once the socket is established. Messages pushed through `onWsEvent` may
+   * arrive before this resolves — the shim buffers them until the open lands.
+   */
+  wsOpen(request: DesktopWsOpenRequest): Promise<DesktopWsOpenResult>
+  /**
+   * Send one message frame on an open socket: a UTF-8 string (text) or a
+   * base64 payload (binary). No-op for unknown or non-open sockets.
+   */
+  wsSend(socketId: string, data: string | { b64: string }, binary: boolean): void
+  /**
+   * Close a socket with a WebSocket close code and reason. No-op for unknown
+   * sockets; a close sent while the open is still in flight is honored once
+   * the socket exists.
+   */
+  wsClose(socketId: string, code: number, reason: string): void
+  /** Subscribe to the host's WebSocket events; returns the unsubscribe function. */
+  onWsEvent(listener: (event: DesktopWsEvent) => void): () => void
 }
 
 const CHANNEL_PATTERN = /^\/[A-Za-z0-9._~-]+$/

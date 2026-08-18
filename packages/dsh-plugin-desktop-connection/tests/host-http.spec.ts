@@ -20,6 +20,14 @@ import {
 } from '../src/client/host-http.ts'
 import type { DshDesktopBridge } from '../src/client/ipc-api-client.ts'
 
+/** The desktop WebSocket bridge surface, stubbed out for these fetch-only tests. */
+const wsSurface = {
+  wsOpen: async () => ({ type: 'ws-failed', message: 'not exercised' } as const),
+  wsSend: (): void => {},
+  wsClose: (): void => {},
+  onWsEvent: () => () => {},
+}
+
 const EXPORT_URL = 'http://dsh.internal/api/session.export?sessionId=s1&includeDescendants=true'
 /** The URL the upstream controller actually builds on the desktop's file:// page. */
 const FILE_EXPORT_URL = 'file:///api/session.export?sessionId=s1&includeDescendants=true'
@@ -48,7 +56,7 @@ test('patchFetch routes a virtual-host HEAD probe over the bridge', async () => 
       requests.push(request)
       return { status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: '' }
     },
-    subscribe: () => () => {},
+    subscribe: () => () => {}, ...wsSurface,
   }
   const restore = patchFetch(bridge)
   try {
@@ -73,7 +81,7 @@ test('patchFetch routes the file:// /api URL the desktop page actually builds', 
       requests.push(request)
       return { status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: '' }
     },
-    subscribe: () => () => {},
+    subscribe: () => () => {}, ...wsSurface,
   }
   const restore = patchFetch(bridge)
   try {
@@ -94,7 +102,7 @@ test('patchFetch GET returns the decoded host body', async () => {
   const payload = 'PK\x03\x04fake-zip-bytes'
   const bridge: DshDesktopBridge = {
     invoke: async () => ({ status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: btoa(payload) }),
-    subscribe: () => () => {},
+    subscribe: () => () => {}, ...wsSurface,
   }
   const restore = patchFetch(bridge)
   try {
@@ -113,7 +121,7 @@ test('patchFetch forwards method, headers, and body for a same-origin POST', asy
       requests.push(request)
       return { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' }, bodyBase64: btoa('{"ok":true}') }
     },
-    subscribe: () => () => {},
+    subscribe: () => () => {}, ...wsSurface,
   }
   const restore = patchFetch(bridge)
   try {
@@ -139,7 +147,7 @@ test('patchFetch forwards method, headers, and body for a same-origin POST', asy
 test('patchFetch forwards a non-ok status as a Response the caller can read', async () => {
   const bridge: DshDesktopBridge = {
     invoke: async () => ({ status: 400, headers: {}, bodyBase64: btoa('missing or invalid sessionId query parameter') }),
-    subscribe: () => () => {},
+    subscribe: () => () => {}, ...wsSurface,
   }
   const restore = patchFetch(bridge)
   try {
@@ -155,7 +163,7 @@ test('patchFetch forwards a non-ok status as a Response the caller can read', as
 test('patchFetch rejects an already-aborted virtual-host request', async () => {
   const bridge: DshDesktopBridge = {
     invoke: async () => { throw new Error('must not be invoked after abort') },
-    subscribe: () => () => {},
+    subscribe: () => () => {}, ...wsSurface,
   }
   const restore = patchFetch(bridge)
   try {
@@ -177,7 +185,7 @@ test('patchFetch passes through non-virtual-host requests', async () => {
   globalThis.fetch = stub
   const restore = patchFetch({
     invoke: async () => { throw new Error('bridge must not be invoked for foreign hosts') },
-    subscribe: () => () => {},
+    subscribe: () => () => {}, ...wsSurface,
   })
   try {
     const response = await fetch('https://example.com/x')
@@ -191,7 +199,7 @@ test('patchFetch passes through non-virtual-host requests', async () => {
 
 test('patchFetch disposer restores the original fetch', async () => {
   const real = globalThis.fetch
-  const restore = patchFetch({ invoke: async () => ({ status: 200, headers: {}, bodyBase64: '' }), subscribe: () => () => {} })
+  const restore = patchFetch({ invoke: async () => ({ status: 200, headers: {}, bodyBase64: '' }), subscribe: () => () => {}, ...wsSurface })
   assert.notEqual(globalThis.fetch, real, 'fetch patched')
   restore()
   assert.equal(globalThis.fetch, real, 'fetch restored')
@@ -222,7 +230,7 @@ test('saveVirtualHostDownload saves the GET body as a blob download', async () =
         requests.push(request)
         return { status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: btoa('zip') }
       },
-      subscribe: () => () => {},
+      subscribe: () => () => {}, ...wsSurface,
     }
     await saveVirtualHostDownload(bridge, new URL(EXPORT_URL), 'dsh-session-s1.zip')
     assert.deepEqual(requests, [{ type: 'http-request', method: 'GET', path: '/api/session.export', search: '?sessionId=s1&includeDescendants=true' }])
@@ -239,7 +247,7 @@ test('saveVirtualHostDownload saves the GET body as a blob download', async () =
 test('saveVirtualHostDownload rejects on a non-2xx answer', async () => {
   const bridge: DshDesktopBridge = {
     invoke: async () => ({ status: 404, headers: {}, bodyBase64: '' }),
-    subscribe: () => () => {},
+    subscribe: () => () => {}, ...wsSurface,
   }
   await assert.rejects(
     saveVirtualHostDownload(bridge, new URL(EXPORT_URL), 'x.zip'),
@@ -275,7 +283,7 @@ test('patchDownloadClicks intercepts virtual-host anchor downloads and prevents 
     const requests: unknown[] = []
     const bridge: DshDesktopBridge = {
       invoke: async (request) => { requests.push(request); return { status: 200, headers: {}, bodyBase64: btoa('zip') } },
-      subscribe: () => () => {},
+      subscribe: () => () => {}, ...wsSurface,
     }
     const remove = patchDownloadClicks(bridge)
     assert.equal(holder.capture, true, 'capture-phase interception')
@@ -301,7 +309,7 @@ test('patchDownloadClicks leaves non-virtual-host clicks alone', async () => {
     let invoked = false
     const bridge: DshDesktopBridge = {
       invoke: async () => { invoked = true; return { status: 200, headers: {}, bodyBase64: '' } },
-      subscribe: () => () => {},
+      subscribe: () => () => {}, ...wsSurface,
     }
     const remove = patchDownloadClicks(bridge)
     let prevented = false
@@ -353,7 +361,7 @@ test('patchAnchorClick diverts a detached virtual-host anchor click to the bridg
     const requests: unknown[] = []
     const bridge: DshDesktopBridge = {
       invoke: async (request) => { requests.push(request); return { status: 200, headers: { 'content-type': 'application/zip' }, bodyBase64: btoa('zip') } },
-      subscribe: () => () => {},
+      subscribe: () => () => {}, ...wsSurface,
     }
     const remove = patchAnchorClick(bridge)
     proto.click.call({ href: FILE_EXPORT_URL, download: 'dsh-session-s1.zip' } as unknown as HTMLAnchorElement)
@@ -373,7 +381,7 @@ test('patchAnchorClick leaves foreign clicks native and diverts file:// anchors'
     const invoked: number[] = []
     const bridge: DshDesktopBridge = {
       invoke: async () => { invoked.push(1); return { status: 200, headers: {}, bodyBase64: '' } },
-      subscribe: () => () => {},
+      subscribe: () => () => {}, ...wsSurface,
     }
     const remove = patchAnchorClick(bridge)
     proto.click.call({ href: 'https://example.com/x.zip', download: 'x.zip' })

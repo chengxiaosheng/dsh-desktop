@@ -46,6 +46,19 @@ export interface WebUpgradeRoute {
   handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
 }
 
+/**
+ * The stable virtual port the desktop reports when its config carries no real
+ * port. The desktop never binds a socket, so this number is a virtual-host
+ * identity — the desktop's own loopback `Origin`/`Host` synthesis is the same
+ * idea. It is nonzero on purpose: third-party plugins read `webServer.port`
+ * to build a harness base URL (e.g. `http://127.0.0.1:<port>` or
+ * `ws://127.0.0.1:<port>/…`), and the host-side virtual-host bridge
+ * (`electron/host-bridge.ts`) intercepts exactly the reported host/port pair
+ * and serves those requests in-process. Deliberately distinct from the DSH
+ * GUI's real 3080 so the two loopback identities never collide.
+ */
+export const VIRTUAL_HOST_PORT = 51470
+
 /** Gateway config: the host/port pair the desktop reports (never bound). */
 export interface GatewayConfig {
   host: '127.0.0.1' | '0.0.0.0'
@@ -86,9 +99,14 @@ export class VirtualWebServer extends Service {
     this.config = config
   }
 
-  /** The configured (never bound) port. */
+  /**
+   * The reported (never bound) port. A nonzero configured port wins; the
+   * config's `port: 0` (the desktop patch's literal "no real port") resolves
+   * to {@link VIRTUAL_HOST_PORT}, the stable virtual identity plugins build
+   * base URLs from.
+   */
   get port(): number {
-    return this.config.port
+    return this.config.port || VIRTUAL_HOST_PORT
   }
 
   /** The configured bind host literal. */
