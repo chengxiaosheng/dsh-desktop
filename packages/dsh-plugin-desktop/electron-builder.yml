@@ -65,6 +65,10 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: DSH Desktop
+  # Replaces the built-in running-app check (customCheckAppRunning macro) with an
+  # exact process-name match — the built-in path-prefix check false-positives
+  # and loops forever on some machines. See build/installer.nsh.
+  include: installer.nsh
   artifactName: DSH-Desktop-${version}-${arch}-Setup.${ext}
 linux:
   target:

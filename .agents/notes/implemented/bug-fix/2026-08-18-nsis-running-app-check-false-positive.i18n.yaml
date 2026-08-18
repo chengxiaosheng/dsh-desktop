@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   git hash-object <file>
+2026-08-18-nsis-running-app-check-false-positive.md: 61b4266529fc46b7020d7cc5be20c816f6c977cf
+2026-08-18-nsis-running-app-check-false-positive.zh.md: b85fd859d0f9f43b196f658fc13676888e1fc5af
