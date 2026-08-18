@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   git hash-object <file>
+2026-08-18-market-override-update.md: 71d8a17c360d19ab3cbbf3fdc5fffe40a5d425ec
+2026-08-18-market-override-update.zh.md: dc659458340e437bf4c45e86dfa98266b7b211f8

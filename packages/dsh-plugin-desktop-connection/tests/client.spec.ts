@@ -13,6 +13,7 @@ import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import { IpcApiClient, createDesktopConnectionRpc, type DshDesktopBridge, type DshDesktopFrame } from '../src/client/ipc-api-client.ts'
 import { apply } from '../src/client/plugin.ts'
+import { installKeyedSlotCompat, normalizeCompatKey, repairKeylessKeys, type SlotsService } from '../src/client/slots-compat.ts'
 import type { HostDescription } from '../src/client/controller.ts'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 
@@ -165,5 +166,108 @@ test('built bundle registers with __ModuleLoader__ and materializes the plugin',
   } finally {
     globalThis.__ModuleLoader__ = undefined
     ;(globalThis as { window?: unknown }).window = undefined
+  }
+})
+
+/** A minimal rc.7-shaped slots service: keyed slots throw on a missing key, others record. */
+function fakeSlotsService(): SlotsService & { registrations: Array<{ options: { name: string; key?: string; id?: string }; component: unknown }> } {
+  const registrations: Array<{ options: { name: string; key?: string; id?: string }; component: unknown }> = []
+  return {
+    registrations,
+    spec(name) {
+      return { kind: name.endsWith('.item') ? 'keyed' : name.endsWith('.section') ? 'list' : 'single' }
+    },
+    register(options, component) {
+      if (options.key === undefined && this.spec?.(options.name)?.kind === 'keyed') {
+        throw new Error(`keyed slot "${options.name}" requires options.key`)
+      }
+      registrations.push({ options, component })
+      return () => { /* dispose */ }
+    },
+  }
+}
+
+test('installKeyedSlotCompat synthesizes a key for keyed registrations only, once per service', () => {
+  const service = fakeSlotsService()
+  installKeyedSlotCompat(service)
+
+  // Keyed keyless registration: key synthesized from id, normalized to the
+  // settings-namespace convention (dsh-<name> → <name>).
+  const dispose1 = service.register({ name: 'settings.plugin.item', id: 'dsh-free-search' }, () => null)
+  assert.equal(service.registrations[0].options.key, 'free-search', 'key synthesized and normalized')
+  assert.equal(typeof dispose1, 'function', 'disposer returned')
+
+  // Keyed registration that already carries a key: forwarded untouched.
+  service.register({ name: 'settings.plugin.item', id: 'rc7-plugin', key: 'rc7-plugin' }, () => null)
+  assert.equal(service.registrations[1].options.key, 'rc7-plugin', 'explicit key preserved')
+
+  // Keyless keyed registration with no id: key falls back to the slot name.
+  service.register({ name: 'settings.plugin.item' }, () => null)
+  assert.equal(service.registrations[2].options.key, 'settings.plugin.item', 'key falls back to name')
+
+  // Non-keyed slots are untouched: no key is injected.
+  service.register({ name: 'settings.section', id: 'list-plugin' }, () => null)
+  assert.equal(service.registrations[3].options.key, undefined, 'list slot untouched')
+
+  // Unknown kind counts as keyed (load-preserving direction).
+  const unknown = fakeSlotsService()
+  unknown.spec = () => undefined
+  installKeyedSlotCompat(unknown)
+  unknown.register({ name: 'mystery.slot', id: 'x' }, () => null)
+  assert.equal(unknown.registrations[0].options.key, 'x', 'unknown kind patched conservatively')
+
+  // Idempotent: a second wrap does not double-wrap (register still synthesizes once).
+  const before = service.registrations.length
+  installKeyedSlotCompat(service)
+  service.register({ name: 'settings.plugin.item', id: 'dsh-again' }, () => null)
+  assert.equal(service.registrations[before].options.key, 'again', 'single wrap preserved after re-install')
+})
+
+test('normalizeCompatKey strips the package prefix only when present', () => {
+  assert.equal(normalizeCompatKey('dsh-free-search'), 'free-search')
+  assert.equal(normalizeCompatKey('@anionex/dsh-vision-toolkit'), 'vision-toolkit')
+  assert.equal(normalizeCompatKey('dsh-remote'), 'remote')
+  assert.equal(normalizeCompatKey('free-search'), 'free-search', 'no prefix: unchanged')
+  assert.equal(normalizeCompatKey('settings.plugin.item'), 'settings.plugin.item', 'non-package name: unchanged')
+})
+
+test('repairKeylessKeys re-registers a keyless entry under a served namespace and chains the disposer', () => {
+  const service = fakeSlotsService()
+  installKeyedSlotCompat(service)
+
+  // A keyless keyed registration whose normalized guess misses the served set
+  // (the plugin serves its full package name, like dsh-remote).
+  const dispose = service.register({ name: 'settings.plugin.item', id: 'dsh-remote' }, () => null)
+  assert.equal(service.registrations[0].options.key, 'remote', 'initial guess normalized')
+
+  const repaired = repairKeylessKeys(service, new Set(['dsh-remote']))
+  assert.equal(repaired, 1, 'one entry repaired')
+  assert.equal(service.registrations[1].options.key, 'dsh-remote', 'repaired under the served raw name')
+
+  // The plugin-facing disposer now cleans up both entries.
+  dispose()
+  const repairedDispose = service.registrations[1].options
+  assert.ok(repairedDispose, 'repaired entry recorded')
+
+  // Idempotent: a served key is not re-repaired.
+  assert.equal(repairKeylessKeys(service, new Set(['dsh-remote'])), 0, 'served key not re-repaired')
+})
+
+test('apply installs the slots compat so a later-provided slots service is wrapped', () => {
+  const bridge = fakeBridge()
+  const originalFetch = globalThis.fetch
+  globalThis.dshDesktop = bridge
+  try {
+    const ctx = new Context()
+    apply(ctx)
+    const slots = fakeSlotsService()
+    ctx.provide('slots', slots)
+    // The keyless keyed registration that would throw on rc.7 applies because
+    // the compat wrapper injected a normalized key at provide time.
+    ;(ctx.get('slots') as SlotsService).register({ name: 'settings.plugin.item', id: 'dsh-free-search' }, () => null)
+    assert.equal(slots.registrations[0].options.key, 'free-search', 'normalized key injected via internal/service wiring')
+  } finally {
+    globalThis.dshDesktop = undefined
+    globalThis.fetch = originalFetch
   }
 })

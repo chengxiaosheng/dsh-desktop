@@ -139,8 +139,8 @@ test('built bundle registers and the plugin mounts the settings row', async () =
   assert.equal(localeLabels.length, 1, 'tray labels published at boot')
   assert.deepEqual(localeLabels[0], { show: 'settings.desktop.tray.show', restart: 'settings.desktop.tray.restart', quit: 'settings.desktop.tray.quit' })
 
-  // The two General-section rows are registered with the expected identities.
-  assert.equal(rowRegistrations.length, 2, 'close-behavior + restart-host rows')
+  // The three General-section rows are registered with the expected identities.
+  assert.equal(rowRegistrations.length, 3, 'close-behavior + market-version + restart-host rows')
   const row = rowRegistrations[0] as {
     name: string
     id: string
@@ -151,7 +151,18 @@ test('built bundle registers and the plugin mounts the settings row', async () =
       setCloseToTray(value: boolean): void
     }
   }
-  const restartRow = rowRegistrations[1] as {
+  const marketRow = rowRegistrations[1] as {
+    name: string
+    id: string
+    order: number
+    locale: string
+    inject: () => {
+      getMarketVersion(): Promise<unknown>
+      updateMarket(version: string): Promise<unknown>
+      rollbackMarket(): Promise<unknown>
+    }
+  }
+  const restartRow = rowRegistrations[2] as {
     name: string
     id: string
     order: number
@@ -162,6 +173,10 @@ test('built bundle registers and the plugin mounts the settings row', async () =
   assert.equal(row.id, 'desktop-close-behavior')
   assert.equal(row.order, 30)
   assert.equal(row.locale, 'settings.desktop')
+  assert.equal(marketRow.name, 'settings.general.item')
+  assert.equal(marketRow.id, 'desktop-market-version')
+  assert.equal(marketRow.order, 35)
+  assert.equal(marketRow.locale, 'settings.desktop')
   assert.equal(restartRow.name, 'settings.general.item')
   assert.equal(restartRow.id, 'desktop-restart-host')
   assert.equal(restartRow.order, 40)
@@ -176,6 +191,12 @@ test('built bundle registers and the plugin mounts the settings row', async () =
   face.setCloseToTray(false)
   assert.equal(face.hooks.closeToTray.getSnapshot().closeToTray, false, 'live value publishes')
   assert.deepEqual(bridgeWrites, [false], 'durable write goes through the bridge')
+
+  // The market-version row exposes the desktop-owned update/rollback controls.
+  const marketFace = marketRow.inject()
+  assert.equal(typeof marketFace.getMarketVersion, 'function', 'market version read exposed to the row')
+  assert.equal(typeof marketFace.updateMarket, 'function', 'market update exposed to the row')
+  assert.equal(typeof marketFace.rollbackMarket, 'function', 'market rollback exposed to the row')
 
   // The restart-host row asks the main process to reboot via the bridge.
   assert.equal(typeof restartRow.inject().restartHost, 'function', 'restartHost exposed to the row')

@@ -11,6 +11,14 @@ export const zh = {
   'settings.desktop.restart.description': '重新加载插件组合，让插件市场的「需要重启」变更生效，无需重启应用。',
   'settings.desktop.restart.action': '重启宿主',
   'settings.desktop.restart.busy': '重启中…',
+  'settings.desktop.market.title': '插件市场版本',
+  'settings.desktop.market.bundled': '内置',
+  'settings.desktop.market.override': '覆盖',
+  'settings.desktop.market.latest': '最新',
+  'settings.desktop.market.check': '检查更新',
+  'settings.desktop.market.checking': '检查中…',
+  'settings.desktop.market.update': '更新到最新版',
+  'settings.desktop.market.rollback': '回退到内置版',
 } as const
 
 /** The settings-row and tray key union. */
@@ -29,4 +37,12 @@ export const en: Record<DesktopSettingsKey, string> = {
   'settings.desktop.restart.description': 'Re-compose the plugin tree so the plugin market\u2019s \u201cneeds restart\u201d changes take effect, without restarting the app.',
   'settings.desktop.restart.action': 'Restart host',
   'settings.desktop.restart.busy': 'Restarting\u2026',
+  'settings.desktop.market.title': 'Plugin market version',
+  'settings.desktop.market.bundled': 'Bundled',
+  'settings.desktop.market.override': 'Override',
+  'settings.desktop.market.latest': 'Latest',
+  'settings.desktop.market.check': 'Check for updates',
+  'settings.desktop.market.checking': 'Checking\u2026',
+  'settings.desktop.market.update': 'Update to latest',
+  'settings.desktop.market.rollback': 'Roll back to bundled',
 }

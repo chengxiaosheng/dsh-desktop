@@ -10,6 +10,7 @@
 import { IpcApiClient, createDesktopConnectionRpc, type DshDesktopBridge } from './ipc-api-client.ts'
 import { ConnectionController, type ConnectionConfig, type HostDescription } from './controller.ts'
 import { patchAnchorClick, patchDownloadClicks, patchFetch } from './host-http.ts'
+import { installSlotsCompat } from './slots-compat.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionHandle, ConnectionSinks } from '@deepseek-ai/dsh-client-connection/client'
 
@@ -24,6 +25,12 @@ export function apply(ctx: Context): void {
   if (bridge === undefined) {
     throw new Error('dsh-plugin-desktop-connection: window.dshDesktop is missing from a desktop composition')
   }
+  // Keyed-slot compatibility for rc.6-era market plugins: wrap the slots
+  // service's register the moment it is provided, before any declaration or
+  // registration, so a keyless keyed-slot registration synthesizes a key
+  // instead of failing the plugin's client entry. This carrier is the first
+  // client entry, so the subscription precedes the slots service's mount.
+  installSlotsCompat(ctx)
   const api = new IpcApiClient(bridge)
   const rpc = createDesktopConnectionRpc(bridge)
   let started = false

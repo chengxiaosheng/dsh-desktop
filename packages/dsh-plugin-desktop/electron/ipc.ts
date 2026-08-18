@@ -22,6 +22,7 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { Context } from '@deepseek-ai/cordis'
 import { readCloseBehavior } from '../src/index.js'
 import { CLOSE_TO_TRAY_FIELD, DESKTOP_SETTINGS_NAMESPACE } from '../src/settings.js'
+import { readMarketVersion, rollbackMarketVersion, updateMarketVersion } from './market-version.js'
 import { composeDesktopManifest, dispatchHttpRequest, type DesktopHostConnection, type FetchHandler, type HttpRequestMessage } from './boot-desktop.js'
 
 /** One client->host RPC envelope the renderer carrier sends over the bridge. */
@@ -71,6 +72,7 @@ export function installIpc(ctx: Context, getWebContents: () => WebContents | und
     installInvokeChannel(ctx, connection),
     installStreamPumps(ctx, getWebContents),
     installCloseBehaviorChannel(ctx),
+    installMarketVersionChannel(ctx),
   ]
   return () => {
     for (const dispose of disposers) dispose()
@@ -116,6 +118,32 @@ function installCloseBehaviorChannel(ctx: Context): () => void {
   }
   ipcMain.handle('dsh:close-behavior', handler)
   return () => { ipcMain.removeHandler('dsh:close-behavior') }
+}
+
+/**
+ * The market-version channel: the shell settings row reads the market's
+ * version states (bundled / override / registry) and triggers a controlled
+ * update or rollback through the desktop-owned service. The shell owns this
+ * surface rather than the market itself, so it works even when the market is
+ * broken or outdated, and a market-managed install can never compose a
+ * duplicate row.
+ */
+function installMarketVersionChannel(ctx: Context): () => void {
+  const handler = async (_event: Electron.IpcMainInvokeEvent, request: unknown): Promise<unknown> => {
+    const body = (typeof request === 'object' && request !== null ? request : {}) as { type?: unknown; version?: unknown }
+    switch (body.type) {
+      case 'read':
+        return readMarketVersion(ctx)
+      case 'update':
+        return updateMarketVersion(ctx, typeof body.version === 'string' ? body.version : '')
+      case 'rollback':
+        return rollbackMarketVersion(ctx)
+      default:
+        return { ok: false, message: 'dsh-desktop: unknown market-version request' }
+    }
+  }
+  ipcMain.handle('dsh:market-version', handler)
+  return () => { ipcMain.removeHandler('dsh:market-version') }
 }
 
 /** sendSync channel: the preload reads the rewritten boot graph synchronously before page scripts run. */

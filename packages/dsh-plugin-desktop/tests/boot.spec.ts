@@ -31,7 +31,7 @@ import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
 import { API_PATH } from '@deepseek-ai/dsh-client-connection'
 import type { Context } from '@deepseek-ai/cordis'
-import { composeDesktopPatches, type DesktopHostConnection } from '../electron/boot-desktop.ts'
+import { composeDesktopPatches, ensureMarketFallback, type DesktopHostConnection } from '../electron/boot-desktop.ts'
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const PKG_ROOT = fileURLToPath(new URL('../', import.meta.url))
@@ -51,6 +51,9 @@ test('virtual webserver interceptor + desktop connection: connection/modules mou
   const profileDir = join(HOME, 'profiles', PROFILE_NAME)
   initProfile(profileDir, PROFILE_TEMPLATES.web)
   healProfilesModuleFallback(INSTALL_ANCHOR, HOME)
+  // The market is an optional dependency the heal walk does not manage; the
+  // boot maintains its profile fallback link (mirrors `bootDesktop`).
+  ensureMarketFallback(profileDir, INSTALL_ANCHOR)
   const profile = loadProfile(BIN_NAME, PROFILE_NAME, INSTALL_ANCHOR, HOME)
   const rootConfig = join(profileDir, 'cordis.yml')
   writeFileSync(rootConfig, '[]\n')

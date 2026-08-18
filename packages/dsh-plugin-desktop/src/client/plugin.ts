@@ -8,6 +8,7 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { CloseBehaviorPolicy, type CloseBehaviorBridge } from './close-behavior-policy.ts'
 import { CloseToTrayRow } from './CloseToTrayRow.tsx'
+import { MarketVersionRow, type MarketVersionInfo, type MarketVersionResult } from './MarketVersionRow.tsx'
 import { RestartHostRow } from './RestartHostRow.tsx'
 import { en, zh } from './locales.ts'
 
@@ -23,6 +24,12 @@ export interface DesktopBridge extends CloseBehaviorBridge {
   sendLocale(labels: { show: string; restart: string; quit: string }): void
   /** Ask the main process to reboot the host in-process (apply pending plugin changes). */
   rebootHost(): Promise<void>
+  /** Read the market's bundled/override/registry versions. */
+  getMarketVersion(): Promise<MarketVersionInfo>
+  /** Update the market to an exact version (dependency-only; restart applies). */
+  updateMarket(version: string): Promise<MarketVersionResult>
+  /** Remove the market override, falling back to the bundled copy. */
+  rollbackMarket(): Promise<MarketVersionResult>
 }
 
 /** Required services: slot registration and the locale registry. */
@@ -61,6 +68,20 @@ export function apply(ctx: ClientContext): void {
       setCloseToTray: (value: boolean) => policy.setCloseToTray(value),
     }),
   }, CloseToTrayRow))
+
+  // Plugin-market version row: the desktop-owned update/rollback control for
+  // the built-in market (the shell owns this, not the market itself).
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'desktop-market-version',
+    order: 35,
+    locale: SETTINGS_NS,
+    inject: () => ({
+      getMarketVersion: () => bridge.getMarketVersion(),
+      updateMarket: (version: string) => bridge.updateMarket(version),
+      rollbackMarket: () => bridge.rollbackMarket(),
+    }),
+  }, MarketVersionRow))
 
   // Restart-host row: apply pending plugin changes (the market shows a
   // "needs restart" banner when a change cannot hot-load) by re-booting the

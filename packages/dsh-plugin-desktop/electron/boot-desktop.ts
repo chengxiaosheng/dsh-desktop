@@ -8,7 +8,7 @@
  * around the returned context.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
@@ -161,6 +161,125 @@ function recoverMissingBundleRows(profile: Profile): void {
 }
 
 /**
+ * Whether a package's root entry artifact (`exports["."]` import/default,
+ * else `main`) exists on disk — the broken-override health check. A real
+ * (non-symlink) override whose entry file is missing cannot load and would
+ * abort the boot, so the fallback step removes it before the loader runs.
+ */
+function entryArtifactExists(dir: string): boolean {
+  try {
+    const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { main?: unknown; exports?: unknown }
+    const exports = manifest.exports as Record<string, unknown> | string | undefined
+    const candidates: string[] = []
+    if (typeof exports === 'string') candidates.push(exports)
+    else if (exports !== null && typeof exports === 'object') {
+      const dot = exports['.']
+      if (typeof dot === 'string') candidates.push(dot)
+      else if (dot !== null && typeof dot === 'object') {
+        const conditions = dot as Record<string, unknown>
+        for (const key of ['import', 'default', 'require'] as const) {
+          if (typeof conditions[key] === 'string') candidates.push(conditions[key] as string)
+        }
+      }
+    }
+    if (candidates.length === 0 && typeof manifest.main === 'string') candidates.push(manifest.main)
+    if (candidates.length === 0) candidates.push('index.js')
+    return candidates.some(rel => existsSync(join(dir, rel)))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Maintain the plugin market's profile fallback link, the desktop-owned analog
+ * of the heal step for a package the heal walk does not manage.
+ *
+ * The market lives in the desktop's `optionalDependencies`, so
+ * `healProfilesModuleFallback` (which walks `dependencies` + `peerDependencies`)
+ * never creates its `profiles/node_modules/dshmarket` link. That path is where
+ * the renderer's client-modules table and the loader's overridable resolution
+ * both look, so the boot must keep it populated itself:
+ *
+ * - no entry → symlink to the app's bundled copy (the built-in fallback);
+ * - a real directory → a user-installed override (updated market) — left as
+ *   the active copy, unless its entry artifact is missing (a broken override
+ *   would abort the boot): then it is removed, the profile manifest's
+ *   `dshmarket` dependency cleared, and the bundled copy re-linked;
+ * - an existing symlink → left alone (already points at the fallback or an
+ *   override's link).
+ * @param profileDir - the active profile directory.
+ * @param installAnchor - the app install's `package.json` path.
+ */
+export function ensureMarketFallback(profileDir: string, installAnchor: string): void {
+  const require = createRequire(installAnchor)
+  let bundledDir: string
+  try {
+    bundledDir = dirname(require.resolve('dshmarket/package.json'))
+  } catch {
+    console.warn('dsh-desktop: dshmarket is not installed in the app closure — the plugin market is unavailable')
+    return
+  }
+  const modulesDir = join(profileDir, 'node_modules')
+  mkdirSync(modulesDir, { recursive: true })
+  const link = join(modulesDir, 'dshmarket')
+  let stat
+  try {
+    stat = lstatSync(link)
+  } catch {
+    stat = undefined
+  }
+  if (stat === undefined) {
+    symlinkSync(bundledDir, link, 'junction')
+    return
+  }
+  if (stat.isSymbolicLink()) return
+  // A real directory: a user-installed override. Broken overrides abort the
+  // next boot (the loader imports the profile copy), so heal them here.
+  if (!entryArtifactExists(link)) {
+    console.warn(`dsh-desktop: plugin market override at ${link} is broken (no loadable entry) — removing it and falling back to the bundled copy`)
+    rmSync(link, { recursive: true, force: true })
+    const manifestPath = join(profileDir, 'package.json')
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { dependencies?: Record<string, string> }
+      if (manifest.dependencies !== undefined && manifest.dependencies.dshmarket !== undefined) {
+        delete manifest.dependencies.dshmarket
+        writeProfileManifest(profileDir, manifest)
+      }
+    } catch {
+      /* unreadable profile manifest — the link removal still stands */
+    }
+    symlinkSync(bundledDir, link, 'junction')
+  }
+}
+
+/**
+ * Ensure `dshmarket` never appears in the profile's `dsh.profile.bundles`,
+ * persisting the removal. The desktop patch owns the single `dsh-market` row;
+ * a market-managed install of the market itself would reconcile the package
+ * into the profile bundles, whose own patch inserts the same row id and
+ * hard-fails the whole tree. The override therefore only ever rides the
+ * dependency (the real directory the fallback step honors).
+ * @param profileDir - the active profile directory.
+ */
+export function normalizeMarketNotABundle(profileDir: string): void {
+  const manifestPath = join(profileDir, 'package.json')
+  let manifest: { dsh?: { profile?: { bundles?: string[] } } }
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as typeof manifest
+  } catch {
+    return
+  }
+  const bundles = manifest.dsh?.profile?.bundles ?? []
+  if (!bundles.includes('dshmarket')) return
+  manifest.dsh = {
+    ...manifest.dsh,
+    profile: { ...manifest.dsh?.profile, bundles: bundles.filter(name => name !== 'dshmarket') },
+  }
+  writeProfileManifest(profileDir, manifest)
+  console.warn('dsh-desktop: removed dshmarket from the profile bundles — the desktop patch mounts the market row')
+}
+
+/**
  * Boot the desktop profile over a (re)initialized Harness home.
  * @param home - the Harness home; defaults to the resolved home.
  * @returns the booted context with the desktop rows mounted.
@@ -169,6 +288,12 @@ export async function bootDesktop(home = resolveDshHome()): Promise<Context> {
   const profileDir = join(home, 'profiles', DESKTOP_PROFILE_NAME)
   initProfile(profileDir, PROFILE_TEMPLATES.web)
   healProfilesModuleFallback(INSTALL_ANCHOR, home)
+  // The market is an optional dependency the heal walk does not manage; keep
+  // its profile fallback link (bundled copy) in place, honoring a
+  // user-installed override and healing a broken one. It is also never a
+  // profile bundle, so a market-managed install cannot compose a duplicate row.
+  ensureMarketFallback(profileDir, INSTALL_ANCHOR)
+  normalizeMarketNotABundle(profileDir)
   // Boot recovery: drop profile bundles that cannot load, so one broken
   // install (a missing bundle package, or a bundle patch referencing a package
   // that is not installed) never hard-fails the whole tree and keeps the app

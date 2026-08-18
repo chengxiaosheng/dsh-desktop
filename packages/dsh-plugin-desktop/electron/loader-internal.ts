@@ -28,6 +28,16 @@ export interface ProfileLoaderInternal {
   import(specifier: string, baseUrl: string, options?: unknown): Promise<unknown>
 }
 
+/**
+ * Packages whose bare resolution prefers the profile over the installation
+ * closure. The plugin market is the overridable package: the desktop ships it
+ * as a built-in (the closure copy), and a user-installed profile override
+ * (an updated version) shadows it on the next boot, with the bundled copy as
+ * the fallback. The profile copy is a symlink to the app's copy in the
+ * default state, so the default resolution is unchanged.
+ */
+export const OVERRIDABLE_PACKAGES: ReadonlySet<string> = new Set(['dshmarket'])
+
 /** Split a bare specifier into its package name and optional subpath. */
 function splitBare(specifier: string): { pkg: string; sub?: string } {
   const parts = specifier.split('/')
@@ -111,7 +121,10 @@ export function canResolveBare(profilePackageUrl: string, specifier: string): bo
 /**
  * Build the internal loader: bare names resolve from the installation closure
  * first, falling back to the native internal (when one exists) or the profile
- * for packages only the user installed.
+ * for packages only the user installed. Packages on the `overridable` set are
+ * the exception — they resolve from the profile FIRST, then the closure: a
+ * user-installed override (e.g. an updated plugin market) shadows the bundled
+ * copy, and the closure remains the fallback when no override is present.
  * @param profilePackageUrl - the active profile's `package.json` file URL (the
  *   `bareModuleBaseUrl` the desktop boots with); fallback base for bare names
  *   the installation cannot resolve.
@@ -119,12 +132,16 @@ export function canResolveBare(profilePackageUrl: string, specifier: string): bo
  *   primary base for bare names, keeping in-box packages on the app's copy.
  * @param native - the loader's original `internal` when the host provided one
  *   (plain Node); used as the profile fallback, never the primary resolver.
+ * @param overridable - package names whose bare resolution prefers the profile
+ *   over the installation closure (the desktop's own copy then serves as the
+ *   fallback). Defaults to the plugin market package.
  * @returns the `internal` hook to install on `ctx.loader`.
  */
 export function createProfileLoaderInternal(
   profilePackageUrl: string,
   installAnchorUrl: string,
   native?: ProfileLoaderInternal,
+  overridable: ReadonlySet<string> = OVERRIDABLE_PACKAGES,
 ): ProfileLoaderInternal {
   const requireInstall = createRequire(installAnchorUrl)
   const requireProfile = createRequire(profilePackageUrl)
@@ -135,6 +152,18 @@ export function createProfileLoaderInternal(
         || specifier.startsWith('file:') || specifier.startsWith('data:')
         || specifier.startsWith('http:') || specifier.startsWith('https:')) {
         return import(new URL(specifier, baseUrl ?? profilePackageUrl).href)
+      }
+      // Overridable packages: the profile copy wins when present (a symlink to
+      // the app's copy in the default state, a real user-installed override
+      // otherwise); fall through to the closure-first path when the profile
+      // cannot resolve it.
+      if (overridable.has(splitBare(specifier).pkg)) {
+        try {
+          const overridePath = resolveBareEntry(requireProfile, specifier)
+          return import(pathToFileURL(overridePath).href)
+        } catch {
+          /* fall through to the closure-first resolution below */
+        }
       }
       // Bare npm name (optionally a subpath like `pkg/entry`): prefer the
       // installation closure so in-box singleton services (dsh-tools,

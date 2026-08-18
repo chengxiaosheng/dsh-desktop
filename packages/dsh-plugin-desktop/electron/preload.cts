@@ -30,4 +30,7 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   setCloseBehavior: (value: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:close-behavior', { type: 'write', value }),
   sendLocale: (labels: unknown): void => { ipcRenderer.send('dsh:locale', labels) },
   rebootHost: (): Promise<unknown> => ipcRenderer.invoke('dsh:reboot-host'),
+  getMarketVersion: (): Promise<unknown> => ipcRenderer.invoke('dsh:market-version', { type: 'read' }),
+  updateMarket: (version: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:market-version', { type: 'update', version }),
+  rollbackMarket: (): Promise<unknown> => ipcRenderer.invoke('dsh:market-version', { type: 'rollback' }),
 })
