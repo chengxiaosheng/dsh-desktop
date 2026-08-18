@@ -3,14 +3,15 @@
  *
  * Creation options, the staged `file://` page load, and the shell-level
  * web-contents guards: no window.open (http/https targets go to the desktop
- * browser), no navigation away from the staged page, and no privileged
- * permission grants - the SPA needs none.
+ * browser), no navigation away from the staged page, and a permission policy
+ * that grants only the clipboard-write the SPA's copy buttons need.
  */
 
 import { BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import { isGrantedPermission } from './permissions.js'
 import { resolvePackageRoot } from './package-root.js'
 import { stageDesktopPage } from './page.js'
 
@@ -56,7 +57,12 @@ export async function createMainWindow(ctx: Context): Promise<BrowserWindow> {
   wc.on('will-navigate', (event, url) => {
     if (url !== page.url) event.preventDefault()
   })
-  wc.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+  wc.session.setPermissionRequestHandler((_wc, permission, callback) => {
+    // The chat copy buttons write the system clipboard through
+    // navigator.clipboard, whose sanitized-write request must be granted;
+    // every other permission request is denied.
+    callback(isGrantedPermission(permission))
+  })
   await win.loadFile(page.path)
   return win
 }
