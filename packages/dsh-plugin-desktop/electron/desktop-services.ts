@@ -10,15 +10,14 @@
  * reconciliation happen through the ordinary DSH CLI. `run` is the low-level
  * variant that runs pnpm directly with the active profile as cwd.
  *
- * pnpm resolution: the bundled standalone binary (`@pnpm/exe`, materialized by
- * its install-time setup.js) is prepended to the child PATH so it wins when
- * present; otherwise the system `pnpm` on PATH serves. The `dsh` CLI entry
- * runs under Electron's plain-Node mode (`ELECTRON_RUN_AS_NODE`), so no system
- * Node is required and a packaged app can install plugins offline.
+ * pnpm resolution: pnpm is resolved from the system PATH (the bundled
+ * standalone binary is not shipped). The `dsh` CLI entry runs under Electron's
+ * plain-Node mode (`ELECTRON_RUN_AS_NODE`), so the CLI itself needs no system
+ * Node; only `pnpm` must exist on PATH for plugin installs.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { createRequire } from 'node:module'
 import { resolvePackageRoot } from './package-root.ts'
@@ -64,32 +63,13 @@ function resolveDshBin(): string {
   return join(dirname(manifestPath), bin)
 }
 
-/** The bundled standalone pnpm directory (`@pnpm/exe` with its binary materialized), or undefined. */
-function bundledPnpmDir(): string | undefined {
-  try {
-    const dir = dirname(require.resolve('@pnpm/exe/package.json'))
-    return existsSync(join(dir, 'pnpm')) ? dir : undefined
-  } catch {
-    return undefined
-  }
-}
-
 /**
- * Build the environment for a package-manager child: inherited env, the
- * bundled pnpm's directory prepended to PATH when present (so the `dsh` CLI's
- * own `spawnSync("pnpm", …)` resolves our binary first), and — for the CLI
- * forwarder — Electron's plain-Node mode.
+ * Build the environment for a package-manager child: inherited env, and — for
+ * the CLI forwarder — Electron's plain-Node mode.
  * @param asNode - when true, run `process.execPath` as plain Node (the `dsh` CLI launch).
  */
 function childEnv(asNode: boolean): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
-  const sep = process.platform === 'win32' ? ';' : ':'
-  const bundled = bundledPnpmDir()
-  if (bundled !== undefined) {
-    const parts = (env.PATH ?? '').split(sep).filter(part => part !== '')
-    if (!parts.includes(bundled)) parts.unshift(bundled)
-    env.PATH = parts.join(sep)
-  }
   if (asNode) env.ELECTRON_RUN_AS_NODE = '1'
   return env
 }
@@ -162,9 +142,7 @@ export function createDesktopServices(activeProfileDir: string, profileName: str
       /** Low-level pnpm run with the active profile as cwd (no plugin reconciliation). */
       run(args, signal) {
         guard()
-        const bundled = bundledPnpmDir()
-        const file = bundled !== undefined ? join(bundled, 'pnpm') : 'pnpm'
-        const child = spawn(file, [...args], {
+        const child = spawn('pnpm', [...args], {
           cwd: activeProfileDir,
           env: childEnv(false),
           stdio: ['ignore', 'pipe', 'pipe'],

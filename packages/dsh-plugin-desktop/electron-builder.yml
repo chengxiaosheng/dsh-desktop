@@ -79,4 +79,7 @@ linux:
   category: Development
   synopsis: DSH Desktop
   maintainer: DeepSeek AI
+  # Keep the installed .desktop filename in sync with package.json desktopName
+  # so the launcher entry and the running window share the same app identity.
+  syncDesktopName: true
   artifactName: DSH-Desktop-${version}-${arch}.${ext}

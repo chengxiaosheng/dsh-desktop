@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   git hash-object <file>
-2026-08-17-plugin-market-transport-and-services.md: 0cab5221d1c5a8be21faa8f2c9fe77dea1a118bc
-2026-08-17-plugin-market-transport-and-services.zh.md: d1f571e579be0d38a63891f2394b262966d7b124
+2026-08-18-system-pnpm-only.md: 9dc3ac8191cc0103cfc14529653d86967e41ec24
+2026-08-18-system-pnpm-only.zh.md: 5b9916f17598c1367e47b586c3df193bb92b87a6

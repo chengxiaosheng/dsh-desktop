@@ -7,13 +7,13 @@ packages:
 allowBuilds:
   '@deepseek-ai/dsh-subprocess-local': true
   '@google/genai': true
-  '@pnpm/exe': true
   esbuild: true
   electron: true
   koffi: true
   node-pty: true
   protobufjs: true
   electron-winstaller: false
+  '@pnpm/exe': set this to true or false
 
 # pnpm's default minimum-release-age (24h) would filter a fresh @deepseek-ai
 # release out of the `next` dist-tag resolution (falling back to the previous

@@ -15,7 +15,7 @@
 
 ### 内置插件市场
 
-默认内置 [dshmarket](https://github.com/dsh-market/dsh-market)：打开 **设置 → 插件市场**，浏览、搜索并一键安装社区插件。市场的 `/dsh-market/*` 路由经进程内宿主分发，桌面端提供市场的宿主契约（`desktopProfiles` + `desktopPnpm`）。安装走真实的 `dsh plugin --profile desktop …` CLI 与内置 pnpm，因此打包应用即使没有系统 Node 或 pnpm 也能安装插件。已安装的插件在下次启动时经以 profile 为锚的加载器钩子加载。
+默认内置 [dshmarket](https://github.com/dsh-market/dsh-market)：打开 **设置 → 插件市场**，浏览、搜索并一键安装社区插件。市场的 `/dsh-market/*` 路由经进程内宿主分发，桌面端提供市场的宿主契约（`desktopProfiles` + `desktopPnpm`）。安装走真实的 `dsh plugin --profile desktop …` CLI，它从系统 PATH 驱动 `pnpm`——因此安装插件需要机器上有 `pnpm`。已安装的插件在下次启动时经以 profile 为锚的加载器钩子加载。
 
 ### 系统托盘与关闭到托盘
 

@@ -25,7 +25,10 @@
     Quit
     doStopProcess:
     DetailPrint "$(appClosing)"
-    nsExec::Exec `"$SYSDIR\cmd.exe" /C taskkill /IM "${APP_EXECUTABLE_FILENAME}" /F /FI "PID ne $pid"`
+    # No "PID ne $pid" filter: the template's $pid variable is only declared when
+    # customCheckAppRunning is NOT defined, and the installer exe name never
+    # equals dsh-desktop.exe, so taskkill /IM cannot hit the installer itself.
+    nsExec::Exec `"$SYSDIR\cmd.exe" /C taskkill /IM "${APP_EXECUTABLE_FILENAME}" /F`
     Pop $0
     Sleep 500
   ${endIf}

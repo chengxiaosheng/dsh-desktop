@@ -44,6 +44,7 @@ const appManifest = JSON.parse(readFileSync(appAnchor, 'utf8')) as ClosureManife
   version: string
   license: string
   homepage: string
+  desktopName?: string
   devDependencies?: Record<string, string>
 }
 
@@ -65,11 +66,12 @@ function packageDirFromAnchor(anchorPath: string, packageName: string): string |
 
 const closure = new Map<string, string>() // package name → resolved dir
 closure.set(appManifest.name, pkgRoot) // the desktop row package itself
-// @pnpm/<platform> ships the standalone pnpm binary that @pnpm/exe's install
-// setup hard-links into its own `pnpm` file. The linked copy is what the
-// desktop runs at runtime, so the platform packages are install-time-only and
-// are excluded to avoid shipping a second ~150MB binary per platform.
-const PNPM_PLATFORM_PKG = /^@pnpm\/(?:linux|linuxstatic|win|macos)-(?:x64|arm64)$/
+// The bundled pnpm is not part of the packaged product: the plugin market
+// resolves pnpm from the system PATH (`desktopPnpm`). `@pnpm/exe` ships the
+// ~140MB standalone binary (Node + pnpm compiled together, with its
+// `@pnpm/<platform>` install-time-only companions), so all of it is excluded
+// from the closure.
+const PNPM_BUNDLED_PKG = /^@pnpm\/(?:exe|(?:linux|linuxstatic|win|macos)-(?:x64|arm64))$/
 const queue: Array<{ anchor: string; manifest: ClosureManifest }> = [{ anchor: appAnchor, manifest: appManifest }]
 for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
   const manifest = next.manifest
@@ -80,7 +82,7 @@ for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
     // optional dependencies; the closure needs the current platform's copy.
     ...Object.keys(manifest.optionalDependencies ?? {}),
   ]) {
-    if (closure.has(dep) || PNPM_PLATFORM_PKG.test(dep)) continue
+    if (closure.has(dep) || PNPM_BUNDLED_PKG.test(dep)) continue
     const dir = packageDirFromAnchor(next.anchor, dep)
     if (dir === undefined) continue
     closure.set(dep, dir)
@@ -115,6 +117,10 @@ writeFileSync(join(staging, 'package.json'), JSON.stringify({
   main: 'lib/main.js',
   license: appManifest.license,
   homepage: appManifest.homepage,
+  // Electron reads desktopName from the app manifest as its Linux app_id, so the
+  // packaged app must carry it (electron-builder mirrors it into the .desktop
+  // StartupWMClass) or the running window loses its taskbar/dock icon.
+  ...(appManifest.desktopName === undefined ? {} : { desktopName: appManifest.desktopName }),
   // electron-builder sizes the app from devDependencies; the real closure ships
   // via extraResources, so no runtime deps are declared here.
   devDependencies: { electron: appManifest.devDependencies?.electron },

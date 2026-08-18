@@ -15,7 +15,7 @@ Runs the complete DeepSeek Harness Web UI (session log, tools, model route, agen
 
 ### Built-in plugin market
 
-Ships [dshmarket](https://github.com/dsh-market/dsh-market) as the default plugin market: open **Settings → Plugin Market**, browse, search, and one-click install community plugins. The market's `/dsh-market/*` routes dispatch through the in-process host, and the desktop provides the market's host contract (`desktopProfiles` + `desktopPnpm`). Installs run the real `dsh plugin --profile desktop …` CLI with the bundled pnpm, so the packaged app installs plugins even without a system Node or pnpm. Installed plugins load at the next boot through a profile-anchored loader hook.
+Ships [dshmarket](https://github.com/dsh-market/dsh-market) as the default plugin market: open **Settings → Plugin Market**, browse, search, and one-click install community plugins. The market's `/dsh-market/*` routes dispatch through the in-process host, and the desktop provides the market's host contract (`desktopProfiles` + `desktopPnpm`). Installs run the real `dsh plugin --profile desktop …` CLI, which drives `pnpm` from the system PATH — so installing plugins requires `pnpm` on the machine. Installed plugins load at the next boot through a profile-anchored loader hook.
 
 ### System tray and close-to-tray
 

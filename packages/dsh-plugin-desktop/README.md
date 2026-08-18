@@ -35,7 +35,7 @@ The renderer's patched fetch sends every `file://` (same-origin) and `http://dsh
 
 ## Plugin market and desktop host services
 
-The package depends on and mounts [dshmarket](https://github.com/dsh-market/dsh-market) (`dshmarket`, insert row `- id: dsh-market`), the in-app plugin market. `bootDesktop` registers the market's Desktop host contract before Loader entries mount: `desktopProfiles` (`{ current: { name: 'desktop', dir } }`) and `desktopPnpm`. `desktopPnpm.runPlugin` re-invokes the published `dsh plugin --profile desktop …` CLI under Electron's plain-Node mode (`ELECTRON_RUN_AS_NODE`), so pnpm and `dsh.profile.bundles` reconciliation happen through the ordinary DSH CLI; `desktopPnpm.run` runs pnpm directly. pnpm resolution prefers the bundled standalone binary (`@pnpm/exe`, materialized into the packaged closure for offline installs) over the system `pnpm` on PATH.
+The package depends on and mounts [dshmarket](https://github.com/dsh-market/dsh-market) (`dshmarket`, insert row `- id: dsh-market`), the in-app plugin market. `bootDesktop` registers the market's Desktop host contract before Loader entries mount: `desktopProfiles` (`{ current: { name: 'desktop', dir } }`) and `desktopPnpm`. `desktopPnpm.runPlugin` re-invokes the published `dsh plugin --profile desktop …` CLI under Electron's plain-Node mode (`ELECTRON_RUN_AS_NODE`), so pnpm and `dsh.profile.bundles` reconciliation happen through the ordinary DSH CLI; `desktopPnpm.run` runs pnpm directly. pnpm resolves from the system PATH — the bundled standalone binary is not shipped, so plugin installs require `pnpm` on the machine.
 
 Plugins the market installs live in the profile's `node_modules`; the boot installs a profile-anchored `ctx.loader.internal` (`electron/loader-internal.ts`) so the Cordis loader resolves them at the next boot even under Electron, where the loader's native internal module loader is unavailable. Boot also self-heals a broken install: a bundle whose package or whose patch-referenced package cannot be resolved is dropped from `dsh.profile.bundles` (with a warning) so one bad plugin never prevents the app from opening.
 
@@ -50,6 +50,6 @@ The settings General-section "Restart host" action (`dsh:reboot-host` channel) a
 ## Known Limitations and Deferred Work
 
 - The tray always exists on every platform (a hidden window must always have a restore path); there is no setting to hide it.
-- The shell is otherwise minimal (window + tray + IPC + bundled pnpm); terminal, profile management, updates, and installers are deferred.
+- The shell is otherwise minimal (window + tray + IPC); terminal, profile management, updates, and installers are deferred.
 - The host reboot is manual (a settings action); automatic reboot waits on a durable pending-restart signal from plugins.
 - `VirtualWebServer` reimplements the official registry semantics (~90 lines) to avoid shipping-package changes; an upstream `listen: false` mode would retire it.
