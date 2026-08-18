@@ -8,6 +8,11 @@
 # Release; .github/workflows/build.yml picks up the tag push and attaches the
 # installers as release assets. Commits must follow Conventional Commits
 # (feat, fix, ...) for the next version to be inferred correctly.
+#
+# The action runs in manifest mode (config-file given): release-please-config
+# declares the component and extra-files, and .release-please-manifest.json
+# records the current version of the root component ("."), so all three
+# package.json files stay in lockstep.
 
 name: release-please
 
@@ -28,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: google-github-actions/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         with:
           config-file: release-please-config.json
           token: ${{ secrets.GITHUB_TOKEN }}
